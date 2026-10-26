@@ -1,0 +1,38 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="PackedScene" path="res://player/player.tscn" id="1_player"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_platform"]
+size = Vector2(1440, 40)
+
+[sub_resource type="Gradient" id="Gradient_stripes"]
+interpolation_mode = 1
+offsets = PackedFloat32Array(0, 0.5)
+colors = PackedColorArray(0.35, 0.35, 0.4, 1, 0.6, 0.6, 0.66, 1)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_stripes"]
+gradient = SubResource("Gradient_stripes")
+width = 96
+height = 1
+
+[node name="MovementPlayground" type="Node2D"]
+
+[node name="Platform" type="StaticBody2D" parent="."]
+position = Vector2(240, 222)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Platform"]
+shape = SubResource("RectangleShape2D_platform")
+
+[node name="Stripes" type="Sprite2D" parent="Platform"]
+texture_filter = 1
+texture_repeat = 2
+texture = SubResource("GradientTexture2D_stripes")
+region_enabled = true
+region_rect = Rect2(0, 0, 1440, 40)
+
+[node name="Player" parent="." instance=ExtResource("1_player")]
+position = Vector2(240, 146)
+
+[node name="Camera2D" type="Camera2D" parent="Player"]
+limit_top = 0
+limit_bottom = 270
