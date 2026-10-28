@@ -1,4 +1,4 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene format=3 uid="uid://cjotcavn3dkcq"]
 
 [ext_resource type="PackedScene" path="res://player/player.tscn" id="1_player"]
 
@@ -15,24 +15,88 @@ gradient = SubResource("Gradient_stripes")
 width = 96
 height = 1
 
-[node name="MovementPlayground" type="Node2D"]
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_step"]
+size = Vector2(80, 16)
 
-[node name="Platform" type="StaticBody2D" parent="."]
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_block_32"]
+size = Vector2(64, 32)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_block_48"]
+size = Vector2(64, 48)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_ceiling"]
+size = Vector2(376, 16)
+
+[node name="MovementPlayground" type="Node2D" unique_id=488757482]
+
+[node name="Platform" type="StaticBody2D" parent="." unique_id=199694631]
 position = Vector2(240, 222)
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Platform"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Platform" unique_id=1287070200]
 shape = SubResource("RectangleShape2D_platform")
 
-[node name="Stripes" type="Sprite2D" parent="Platform"]
+[node name="Stripes" type="Sprite2D" parent="Platform" unique_id=999583975]
 texture_filter = 1
 texture_repeat = 2
 texture = SubResource("GradientTexture2D_stripes")
 region_enabled = true
 region_rect = Rect2(0, 0, 1440, 40)
 
-[node name="Player" parent="." instance=ExtResource("1_player")]
+[node name="StepPlatform" type="StaticBody2D" parent="." unique_id=1051676674]
+position = Vector2(368, 194)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="StepPlatform" unique_id=1160447653]
+shape = SubResource("RectangleShape2D_step")
+
+[node name="Stripes" type="Sprite2D" parent="StepPlatform" unique_id=1577757970]
+texture_filter = 1
+texture_repeat = 2
+texture = SubResource("GradientTexture2D_stripes")
+region_enabled = true
+region_rect = Rect2(0, 0, 80, 16)
+
+[node name="Block32" type="StaticBody2D" parent="." unique_id=1941295762]
+position = Vector2(560, 186)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Block32" unique_id=1159164667]
+shape = SubResource("RectangleShape2D_block_32")
+
+[node name="Stripes" type="Sprite2D" parent="Block32" unique_id=887970023]
+texture_filter = 1
+texture_repeat = 2
+texture = SubResource("GradientTexture2D_stripes")
+region_enabled = true
+region_rect = Rect2(0, 0, 64, 32)
+
+[node name="Block48" type="StaticBody2D" parent="." unique_id=1031843563]
+position = Vector2(672, 178)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Block48" unique_id=1852556289]
+shape = SubResource("RectangleShape2D_block_48")
+
+[node name="Stripes" type="Sprite2D" parent="Block48" unique_id=1793080105]
+texture_filter = 1
+texture_repeat = 2
+texture = SubResource("GradientTexture2D_stripes")
+region_enabled = true
+region_rect = Rect2(0, 0, 64, 48)
+
+[node name="Ceiling" type="StaticBody2D" parent="." unique_id=1118680894]
+position = Vector2(516, 62)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Ceiling" unique_id=365149862]
+shape = SubResource("RectangleShape2D_ceiling")
+
+[node name="Stripes" type="Sprite2D" parent="Ceiling" unique_id=382999198]
+texture_filter = 1
+texture_repeat = 2
+texture = SubResource("GradientTexture2D_stripes")
+region_enabled = true
+region_rect = Rect2(0, 0, 376, 16)
+
+[node name="Player" parent="." unique_id=1803728059 instance=ExtResource("1_player")]
 position = Vector2(240, 146)
 
-[node name="Camera2D" type="Camera2D" parent="Player"]
+[node name="Camera2D" type="Camera2D" parent="Player" unique_id=752300354]
 limit_top = 0
 limit_bottom = 270
