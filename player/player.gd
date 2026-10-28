@@ -5,11 +5,11 @@ extends CharacterBody2D
 ## World scale is taken from the collision rectangle: its height is 2 m.
 ## Tuning values are in metres and seconds, converted to pixels once in _ready().
 ##
-## Leaving the ground (jumping or walking off a ledge) locks horizontal velocity for the air lock
-## time: it is re-applied every airborne frame, so bumping a wall or ledge corner doesn't cancel
-## it. The lock lasts a charged jump's flight time plus air_lock_extra_time, so it only runs out
-## on long falls; attaching a wire clears it at once. Unlocked, air drag slowly bleeds off
-## horizontal speed and the arrow keys give weak, capped air control.
+## Jumping locks horizontal velocity for the air lock time: it is re-applied every airborne
+## frame, so bumping a wall or ledge corner doesn't cancel it. The lock lasts a charged jump's
+## flight time plus air_lock_extra_time, so it only runs out on long falls; attaching a wire
+## clears it at once. Walking or dashing off a ledge isn't locked. Unlocked, air drag slowly
+## bleeds off horizontal speed and the arrow keys give weak, capped air control.
 ##
 ## Jumps fire when Z is released. Holding Z on the ground for charge_time brings the player to a
 ## stop, and releasing then launches a charged jump instead of a normal one.
@@ -134,7 +134,7 @@ var _air_velocity_x: float = 0.0
 var _air_target_x: float = 0.0
 ## Rate _air_velocity_x eases towards _air_target_x, in pixels per second squared.
 var _air_slowdown_px: float = 0.0
-## Seconds of air lock left. Refilled every grounded frame, cleared by attaching a wire.
+## Seconds of air lock left. Set by jumping, cleared on the ground and by attaching a wire.
 var _air_lock_left: float = 0.0
 ## True from pressing Z on the ground until it is released or the player leaves the ground.
 var _jump_charging: bool = false
@@ -230,8 +230,8 @@ func _update_ground(direction: float, delta: float) -> void:
 		velocity.x = _ground_velocity_x(direction, delta)
 		return
 
-	# Any way of leaving the ground from here (jump, ledge, dash) starts a full air lock.
-	_air_lock_left = _air_lock_duration
+	# Only jumps lock the air; walking or dashing off a ledge falls unlocked.
+	_air_lock_left = 0.0
 	if Input.is_action_just_pressed("jump"):
 		_jump_charging = true
 		_jump_hold_time = 0.0
@@ -357,13 +357,15 @@ func _detach_wire() -> void:
 	_wire_attached = false
 
 
-## Returns the unit aim direction: straight up when standing still, otherwise wire_moving_angle
-## above horizontal in the direction of travel. Uses actual movement, not the held keys.
+## Returns the unit aim direction: straight up when still with no arrow held, otherwise
+## wire_moving_angle above horizontal. A held arrow picks the side, so you can fire backwards
+## mid-jump; with no arrow held it fires in the direction of travel.
 func _wire_aim() -> Vector2:
-	if is_zero_approx(velocity.x):
+	var side := _input_dir if _input_dir != 0.0 else signf(velocity.x)
+	if is_zero_approx(side):
 		return Vector2.UP
 	var angle := deg_to_rad(wire_moving_angle)
-	return Vector2(signf(velocity.x) * cos(angle), -sin(angle))
+	return Vector2(side * cos(angle), -sin(angle))
 
 
 ## Casts rays fanning out from the aim in WIRE_SEARCH_STEP_DEG steps. The first offset that hits
@@ -452,6 +454,7 @@ func _launch(takeoff_x: float, target_x: float, launch_velocity: float) -> void:
 	_air_velocity_x = takeoff_x
 	_air_target_x = target_x
 	_air_slowdown_px = absf(takeoff_x - target_x) / maxf(jump_slowdown_time, 0.001)
+	_air_lock_left = _air_lock_duration
 
 
 ## Vertical takeoff speed that peaks at height_px. The continuous v = sqrt(2 * g * h) overshoots
