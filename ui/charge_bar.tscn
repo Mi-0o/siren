@@ -1,0 +1,13 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/charge_bar.gd" id="1_charge_bar"]
+
+[node name="ChargeBar" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 6.0
+offset_top = 20.0
+offset_right = 130.0
+offset_bottom = 33.0
+mouse_filter = 2
+script = ExtResource("1_charge_bar")

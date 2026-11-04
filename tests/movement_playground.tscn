@@ -1,102 +1,79 @@
 [gd_scene format=3 uid="uid://cjotcavn3dkcq"]
 
 [ext_resource type="PackedScene" path="res://player/player.tscn" id="1_player"]
-
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_platform"]
-size = Vector2(1440, 40)
-
-[sub_resource type="Gradient" id="Gradient_stripes"]
-interpolation_mode = 1
-offsets = PackedFloat32Array(0, 0.5)
-colors = PackedColorArray(0.35, 0.35, 0.4, 1, 0.6, 0.6, 0.66, 1)
-
-[sub_resource type="GradientTexture2D" id="GradientTexture2D_stripes"]
-gradient = SubResource("Gradient_stripes")
-width = 96
-height = 1
-
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_step"]
-size = Vector2(80, 16)
-
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_block_32"]
-size = Vector2(64, 32)
-
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_block_48"]
-size = Vector2(64, 48)
-
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_ceiling"]
-size = Vector2(376, 16)
+[ext_resource type="PackedScene" path="res://ui/charge_bar.tscn" id="3_charge_bar"]
+[ext_resource type="PackedScene" path="res://ui/status_panel.tscn" id="4_status_panel"]
+[ext_resource type="PackedScene" path="res://ui/pause_menu.tscn" id="5_pause_menu"]
+[ext_resource type="PackedScene" path="res://charging_station/save_station.tscn" id="7_save_station"]
+[ext_resource type="Script" uid="uid://cdbh5gfr76u30" path="res://ui/ammo_counter.gd" id="8_ammo_counter"]
+[ext_resource type="Script" uid="uid://xnd7dnoux00" path="res://player/player_camera.gd" id="9_player_camera"]
+[ext_resource type="Script" uid="uid://b676bucpwyktl" path="res://tests/playground/warehouse_backdrop.gd" id="10_backdrop"]
+[ext_resource type="Script" uid="uid://bp4ca1yg5t1gl" path="res://tests/playground/arena_floor.gd" id="11_floor"]
+[ext_resource type="Script" uid="uid://bmfj82nb3pun3" path="res://tests/playground/arena_block.gd" id="12_block"]
 
 [node name="MovementPlayground" type="Node2D" unique_id=488757482]
 
-[node name="Platform" type="StaticBody2D" parent="." unique_id=199694631]
-position = Vector2(240, 222)
+[node name="Backdrop" type="Node2D" parent="." unique_id=1500311927]
+script = ExtResource("10_backdrop")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Platform" unique_id=1287070200]
-shape = SubResource("RectangleShape2D_platform")
+[node name="Floor" type="StaticBody2D" parent="." unique_id=1500311928]
+position = Vector2(240, 202)
+script = ExtResource("11_floor")
 
-[node name="Stripes" type="Sprite2D" parent="Platform" unique_id=999583975]
-texture_filter = 1
-texture_repeat = 2
-texture = SubResource("GradientTexture2D_stripes")
-region_enabled = true
-region_rect = Rect2(0, 0, 1440, 40)
+[node name="Step8" type="StaticBody2D" parent="." unique_id=1500311930]
+position = Vector2(360, 202)
+script = ExtResource("12_block")
+size = Vector2i(80, 8)
 
-[node name="StepPlatform" type="StaticBody2D" parent="." unique_id=1051676674]
-position = Vector2(368, 194)
+[node name="Step20" type="StaticBody2D" parent="." unique_id=1500311931]
+position = Vector2(464, 202)
+script = ExtResource("12_block")
+variant = 1
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="StepPlatform" unique_id=1160447653]
-shape = SubResource("RectangleShape2D_step")
+[node name="Step32" type="StaticBody2D" parent="." unique_id=1500311932]
+position = Vector2(568, 202)
+script = ExtResource("12_block")
+size = Vector2i(80, 32)
+variant = 2
 
-[node name="Stripes" type="Sprite2D" parent="StepPlatform" unique_id=1577757970]
-texture_filter = 1
-texture_repeat = 2
-texture = SubResource("GradientTexture2D_stripes")
-region_enabled = true
-region_rect = Rect2(0, 0, 80, 16)
+[node name="Step48" type="StaticBody2D" parent="." unique_id=1500311933]
+position = Vector2(672, 202)
+script = ExtResource("12_block")
+size = Vector2i(80, 48)
+variant = 3
 
-[node name="Block32" type="StaticBody2D" parent="." unique_id=1941295762]
-position = Vector2(560, 186)
-
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Block32" unique_id=1159164667]
-shape = SubResource("RectangleShape2D_block_32")
-
-[node name="Stripes" type="Sprite2D" parent="Block32" unique_id=887970023]
-texture_filter = 1
-texture_repeat = 2
-texture = SubResource("GradientTexture2D_stripes")
-region_enabled = true
-region_rect = Rect2(0, 0, 64, 32)
-
-[node name="Block48" type="StaticBody2D" parent="." unique_id=1031843563]
-position = Vector2(672, 178)
-
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Block48" unique_id=1852556289]
-shape = SubResource("RectangleShape2D_block_48")
-
-[node name="Stripes" type="Sprite2D" parent="Block48" unique_id=1793080105]
-texture_filter = 1
-texture_repeat = 2
-texture = SubResource("GradientTexture2D_stripes")
-region_enabled = true
-region_rect = Rect2(0, 0, 64, 48)
-
-[node name="Ceiling" type="StaticBody2D" parent="." unique_id=1118680894]
-position = Vector2(516, 62)
-
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Ceiling" unique_id=365149862]
-shape = SubResource("RectangleShape2D_ceiling")
-
-[node name="Stripes" type="Sprite2D" parent="Ceiling" unique_id=382999198]
-texture_filter = 1
-texture_repeat = 2
-texture = SubResource("GradientTexture2D_stripes")
-region_enabled = true
-region_rect = Rect2(0, 0, 376, 16)
+[node name="SaveStation" parent="." unique_id=640318297 node_paths=PackedStringArray("menu") instance=ExtResource("7_save_station")]
+position = Vector2(130, 202)
+menu = NodePath("../HUD/PauseMenu")
 
 [node name="Player" parent="." unique_id=1803728059 instance=ExtResource("1_player")]
 position = Vector2(240, 146)
+cannon_charges = 5
 
 [node name="Camera2D" type="Camera2D" parent="Player" unique_id=752300354]
 limit_top = 0
 limit_bottom = 270
+script = ExtResource("9_player_camera")
+
+[node name="HUD" type="CanvasLayer" parent="." unique_id=1718925573]
+
+[node name="ChargeBar" parent="HUD" unique_id=427540165 node_paths=PackedStringArray("player") instance=ExtResource("3_charge_bar")]
+player = NodePath("../../Player")
+
+[node name="AmmoCounter" type="Control" parent="HUD" unique_id=2142741584 node_paths=PackedStringArray("player")]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 6.0
+offset_top = 35.0
+offset_right = 31.0
+offset_bottom = 48.0
+mouse_filter = 2
+script = ExtResource("8_ammo_counter")
+player = NodePath("../../Player")
+
+[node name="StatusPanel" parent="HUD" unique_id=958556431 node_paths=PackedStringArray("player") instance=ExtResource("4_status_panel")]
+player = NodePath("../../Player")
+
+[node name="PauseMenu" parent="HUD" unique_id=1630492817 node_paths=PackedStringArray("player", "status_panel") instance=ExtResource("5_pause_menu")]
+player = NodePath("../../Player")
+status_panel = NodePath("../StatusPanel")

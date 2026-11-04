@@ -1,0 +1,13 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/status_panel.gd" id="1_status_panel"]
+
+[node name="StatusPanel" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 6.0
+offset_top = 6.0
+offset_right = 122.0
+offset_bottom = 19.0
+mouse_filter = 2
+script = ExtResource("1_status_panel")

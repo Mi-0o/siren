@@ -1,25 +1,289 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene format=3]
 
 [ext_resource type="Script" path="res://player/player.gd" id="1_player"]
+[ext_resource type="Script" path="res://player/player_visual.gd" id="2_tqiix"]
+[ext_resource type="Texture2D" path="res://player/parts/hip.png" id="3_e7oew"]
+[ext_resource type="Texture2D" path="res://player/parts/thigh.png" id="4_c35mf"]
+[ext_resource type="Texture2D" path="res://player/parts/shin.png" id="5_65viv"]
+[ext_resource type="Texture2D" path="res://player/parts/waist_1.png" id="7_bjvpn"]
+[ext_resource type="Texture2D" path="res://player/parts/waist_2.png" id="8_s7qer"]
+[ext_resource type="Texture2D" path="res://player/parts/waist_3.png" id="9_g4c7l"]
+[ext_resource type="Texture2D" path="res://player/parts/ribcage.png" id="10_knn7v"]
+[ext_resource type="Texture2D" path="res://player/parts/neck.png" id="12_uw77l"]
+[ext_resource type="Texture2D" path="res://player/parts/head.png" id="13_rptt4"]
+[ext_resource type="Texture2D" path="res://player/parts/head_glow.png" id="14_r7pn3"]
+[ext_resource type="Script" path="res://player/player_animator.gd" id="15_32hag"]
+[ext_resource type="Texture2D" path="res://player/parts/upper_arm.png" id="15_b8hi5"]
+[ext_resource type="Texture2D" path="res://player/parts/forearm.png" id="16_2uvqg"]
+[ext_resource type="Shader" path="res://player/silhouette_outline.gdshader" id="17_1s1yo"]
 
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_player"]
-size = Vector2(16, 32)
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_32hag"]
+size = Vector2(14, 32)
 
-[node name="Player" type="CharacterBody2D"]
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_tqiix"]
+shader = ExtResource("17_1s1yo")
+
+[sub_resource type="ViewportTexture" id="ViewportTexture_e7oew"]
+viewport_path = NodePath("Visual/Rig")
+
+[sub_resource type="CanvasItemMaterial" id="CanvasItemMaterial_c35mf"]
+blend_mode = 1
+
+[node name="Player" type="CharacterBody2D" unique_id=1748355748]
+floor_snap_length = 3.0
 script = ExtResource("1_player")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
-shape = SubResource("RectangleShape2D_player")
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=616341639]
+shape = SubResource("RectangleShape2D_32hag")
 
-[node name="Visual" type="ColorRect" parent="."]
-offset_left = -8.0
-offset_top = -16.0
-offset_right = 8.0
-offset_bottom = 16.0
-mouse_filter = 2
-color = Color(0.9, 0.3, 0.3, 1)
+[node name="Visual" type="Node2D" parent="." unique_id=310291845]
+script = ExtResource("2_tqiix")
 
-[node name="Wire" type="Line2D" parent="."]
+[node name="Rig" type="SubViewport" parent="Visual" unique_id=857961017]
+disable_3d = true
+transparent_bg = true
+canvas_item_default_texture_filter = 0
+gui_disable_input = true
+size = Vector2i(80, 80)
+render_target_update_mode = 4
+
+[node name="Skeleton" type="Skeleton2D" parent="Visual/Rig" unique_id=1247818471]
+position = Vector2(40, 70)
+
+[node name="Hip" type="Bone2D" parent="Visual/Rig/Skeleton" unique_id=693691017]
+position = Vector2(0, -20)
+rest = Transform2D(1, 0, 0, 1, 0, -20)
+auto_calculate_length_and_angle = false
+length = 1.0
+bone_angle = 10313.24
+
+[node name="Sprite" type="Sprite2D" parent="Visual/Rig/Skeleton/Hip" unique_id=1591656628]
+z_index = 2
+texture = ExtResource("3_e7oew")
+centered = false
+offset = Vector2(-2, -1)
+
+[node name="ThighFar" type="Bone2D" parent="Visual/Rig/Skeleton/Hip" unique_id=1372475624]
+position = Vector2(-1, 0)
+rotation = 0.28
+rest = Transform2D(0.96105546, 0.27635565, -0.27635565, 0.96105546, -1, 0)
+auto_calculate_length_and_angle = false
+length = 9.0
+bone_angle = 5156.62
+
+[node name="Sprite" type="Sprite2D" parent="Visual/Rig/Skeleton/Hip/ThighFar" unique_id=1086234391]
+modulate = Color(0.58, 0.6, 0.72, 1)
+texture = ExtResource("4_c35mf")
+centered = false
+offset = Vector2(-1, -1)
+
+[node name="ShinFar" type="Bone2D" parent="Visual/Rig/Skeleton/Hip/ThighFar" unique_id=1639910325]
+position = Vector2(0, 9)
+rotation = 0.1
+rest = Transform2D(0.9950042, 0.09983342, -0.09983342, 0.9950042, 0, 9)
+auto_calculate_length_and_angle = false
+length = 10.0
+bone_angle = 5156.62
+
+[node name="Sprite" type="Sprite2D" parent="Visual/Rig/Skeleton/Hip/ThighFar/ShinFar" unique_id=1710702777]
+modulate = Color(0.58, 0.6, 0.72, 1)
+texture = ExtResource("5_65viv")
+centered = false
+offset = Vector2(-1, -1)
+
+[node name="ThighNear" type="Bone2D" parent="Visual/Rig/Skeleton/Hip" unique_id=236139174]
+rotation = -0.3
+rest = Transform2D(0.9553365, -0.29552022, 0.29552022, 0.9553365, 0, 0)
+auto_calculate_length_and_angle = false
+length = 9.0
+bone_angle = 5156.62
+
+[node name="Sprite" type="Sprite2D" parent="Visual/Rig/Skeleton/Hip/ThighNear" unique_id=77842846]
+z_index = 4
+texture = ExtResource("4_c35mf")
+centered = false
+offset = Vector2(-1, -1)
+
+[node name="ShinNear" type="Bone2D" parent="Visual/Rig/Skeleton/Hip/ThighNear" unique_id=902797304]
+position = Vector2(0, 9)
+rotation = 0.4
+rest = Transform2D(0.921061, 0.38941833, -0.38941833, 0.921061, 0, 9)
+auto_calculate_length_and_angle = false
+length = 10.0
+bone_angle = 5156.62
+
+[node name="Sprite" type="Sprite2D" parent="Visual/Rig/Skeleton/Hip/ThighNear/ShinNear" unique_id=653358907]
+z_index = 3
+texture = ExtResource("5_65viv")
+centered = false
+offset = Vector2(-1, -1)
+
+[node name="Waist1" type="Bone2D" parent="Visual/Rig/Skeleton/Hip" unique_id=1023715384]
+position = Vector2(0, -1)
+rotation = 0.05
+rest = Transform2D(0.99875027, 0.04997917, -0.04997917, 0.99875027, 0, -1)
+auto_calculate_length_and_angle = false
+length = 2.0
+bone_angle = -5156.62
+
+[node name="Sprite" type="Sprite2D" parent="Visual/Rig/Skeleton/Hip/Waist1" unique_id=905173597]
+z_index = 1
+texture = ExtResource("7_bjvpn")
+centered = false
+offset = Vector2(-1, -2)
+
+[node name="Waist2" type="Bone2D" parent="Visual/Rig/Skeleton/Hip/Waist1" unique_id=1502842847]
+position = Vector2(0, -2)
+rotation = 0.05
+rest = Transform2D(0.99875027, 0.04997917, -0.04997917, 0.99875027, 0, -2)
+auto_calculate_length_and_angle = false
+length = 2.0
+bone_angle = -5156.62
+
+[node name="Sprite" type="Sprite2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2" unique_id=1112984971]
+z_index = 1
+texture = ExtResource("8_s7qer")
+centered = false
+offset = Vector2(-1, -2)
+
+[node name="Waist3" type="Bone2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2" unique_id=366467681]
+position = Vector2(0, -2)
+rotation = 0.05
+rest = Transform2D(0.99875027, 0.04997917, -0.04997917, 0.99875027, 0, -2)
+auto_calculate_length_and_angle = false
+length = 2.0
+bone_angle = -5156.62
+
+[node name="Sprite" type="Sprite2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2/Waist3" unique_id=466705506]
+z_index = 1
+texture = ExtResource("9_g4c7l")
+centered = false
+offset = Vector2(-1, -2)
+
+[node name="Ribcage" type="Bone2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2/Waist3" unique_id=246767951]
+position = Vector2(0, -2)
+rotation = 0.08
+rest = Transform2D(0.99680173, 0.07991469, -0.07991469, 0.99680173, 0, -2)
+auto_calculate_length_and_angle = false
+length = 7.071068
+bone_angle = -4690.7993
+
+[node name="Sprite" type="Sprite2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2/Waist3/Ribcage" unique_id=2039029322]
+z_index = 2
+texture = ExtResource("10_knn7v")
+centered = false
+offset = Vector2(-3, -7)
+
+[node name="Neck" type="Bone2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2/Waist3/Ribcage" unique_id=41320491]
+position = Vector2(1, -7)
+rotation = 0.3
+rest = Transform2D(0.9553365, 0.29552022, -0.29552022, 0.9553365, 1, -7)
+auto_calculate_length_and_angle = false
+length = 3.0
+bone_angle = -5156.62
+
+[node name="Sprite" type="Sprite2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2/Waist3/Ribcage/Neck" unique_id=903434917]
+z_index = 1
+texture = ExtResource("12_uw77l")
+centered = false
+offset = Vector2(0, -3)
+
+[node name="Head" type="Bone2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2/Waist3/Ribcage/Neck" unique_id=1168372101]
+position = Vector2(0, -3)
+rotation = -0.45
+rest = Transform2D(0.90044713, -0.43496552, 0.43496552, 0.90044713, 0, -3)
+auto_calculate_length_and_angle = false
+length = 5.8309517
+bone_angle = -1774.0925
+
+[node name="Sprite" type="Sprite2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2/Waist3/Ribcage/Neck/Head" unique_id=1168839005]
+z_index = 2
+texture = ExtResource("13_rptt4")
+centered = false
+offset = Vector2(-3, -4)
+
+[node name="Glow" type="Sprite2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2/Waist3/Ribcage/Neck/Head" unique_id=165906801]
+z_index = 2
+texture = ExtResource("14_r7pn3")
+centered = false
+offset = Vector2(-3, -4)
+
+[node name="UpperArmFar" type="Bone2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2/Waist3/Ribcage" unique_id=640176914]
+position = Vector2(-2, -6)
+rotation = 0.4
+rest = Transform2D(0.921061, 0.38941833, -0.38941833, 0.921061, -2, -6)
+auto_calculate_length_and_angle = false
+length = 8.0
+bone_angle = 5156.62
+
+[node name="Sprite" type="Sprite2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2/Waist3/Ribcage/UpperArmFar" unique_id=563755850]
+modulate = Color(0.58, 0.6, 0.72, 1)
+texture = ExtResource("15_b8hi5")
+centered = false
+offset = Vector2(-1, -1)
+
+[node name="ForearmFar" type="Bone2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2/Waist3/Ribcage/UpperArmFar" unique_id=1839430452]
+position = Vector2(0, 8)
+rotation = -0.25
+rest = Transform2D(0.9689124, -0.24740396, 0.24740396, 0.9689124, 0, 8)
+auto_calculate_length_and_angle = false
+length = 10.0
+bone_angle = 5156.62
+
+[node name="Sprite" type="Sprite2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2/Waist3/Ribcage/UpperArmFar/ForearmFar" unique_id=428964424]
+modulate = Color(0.58, 0.6, 0.72, 1)
+texture = ExtResource("16_2uvqg")
+centered = false
+offset = Vector2(-1, -1)
+
+[node name="UpperArmNear" type="Bone2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2/Waist3/Ribcage" unique_id=708459474]
+position = Vector2(-1, -6)
+rotation = -0.6
+rest = Transform2D(0.8253356, -0.5646425, 0.5646425, 0.8253356, -1, -6)
+auto_calculate_length_and_angle = false
+length = 8.0
+bone_angle = 5156.62
+
+[node name="Sprite" type="Sprite2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2/Waist3/Ribcage/UpperArmNear" unique_id=1238303215]
+z_index = 6
+texture = ExtResource("15_b8hi5")
+centered = false
+offset = Vector2(-1, -1)
+
+[node name="ForearmNear" type="Bone2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2/Waist3/Ribcage/UpperArmNear" unique_id=1706319022]
+position = Vector2(0, 8)
+rotation = -0.2
+rest = Transform2D(0.9800666, -0.19866933, 0.19866933, 0.9800666, 0, 8)
+auto_calculate_length_and_angle = false
+length = 10.0
+bone_angle = 5156.62
+
+[node name="Sprite" type="Sprite2D" parent="Visual/Rig/Skeleton/Hip/Waist1/Waist2/Waist3/Ribcage/UpperArmNear/ForearmNear" unique_id=1557254597]
+z_index = 5
+texture = ExtResource("16_2uvqg")
+centered = false
+offset = Vector2(-1, -1)
+
+[node name="WiresBack" type="Node2D" parent="Visual/Rig" unique_id=1311428321]
+
+[node name="WiresFront" type="Node2D" parent="Visual/Rig" unique_id=865457750]
+z_index = 20
+
+[node name="Animator" type="Node" parent="Visual" unique_id=550250072]
+script = ExtResource("15_32hag")
+
+[node name="Display" type="Sprite2D" parent="Visual" unique_id=1968503362]
+texture_filter = 1
+material = SubResource("ShaderMaterial_tqiix")
+position = Vector2(-40, -54)
+texture = SubResource("ViewportTexture_e7oew")
+centered = false
+
+[node name="Halo" type="Node2D" parent="Visual/Display" unique_id=1853814096]
+material = SubResource("CanvasItemMaterial_c35mf")
+
+[node name="Wire" type="Line2D" parent="." unique_id=2130549330]
+z_index = -1
 visible = false
 points = PackedVector2Array(0, 0, 0, 0)
 width = 1.0
