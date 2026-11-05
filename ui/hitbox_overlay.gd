@@ -2,7 +2,8 @@ class_name HitboxOverlay
 extends Node2D
 ## Dev view of every hitbox in the running scene, switched by the dev menu's SHOW HITBOXES:
 ## collision shapes of solid things in blue, the robot's body in green, other areas in yellow
-## and live attack hitboxes (AttackHitbox) in red. Drawn over the world, under the HUD.
+## and live attack hitboxes (AttackHitbox) in red. The robot's body turns white while a dash
+## makes it invulnerable, and pale cyan while it is still passing through an enemy after that. Drawn over the world, under the HUD.
 ##
 ## One instance lives under the scene tree's root, so the setting carries across scene changes.
 
@@ -10,6 +11,8 @@ const SOLID := Color(0.35, 0.6, 1.0)
 const BODY := Color(0.3, 1.0, 0.45)
 const AREA := Color(1.0, 0.85, 0.2)
 const ATTACK := Color(1.0, 0.18, 0.12)
+const INVULNERABLE := Color(1.0, 1.0, 1.0)
+const PHASING := Color(0.45, 0.9, 1.0)
 const FILL_ALPHA: float = 0.22
 
 ## Whether the overlay draws. Set through set_enabled() so the overlay exists.
@@ -57,6 +60,12 @@ func _draw_tree(node: Node) -> void:
 func _color_for(owner_node: Node) -> Color:
 	if owner_node is AttackHitbox:
 		return ATTACK
+	if owner_node is Player:
+		var player := owner_node as Player
+		if player.is_invulnerable():
+			return INVULNERABLE
+		if player.is_phasing():
+			return PHASING
 	if owner_node is CharacterBody2D:
 		return BODY
 	if owner_node is Area2D:

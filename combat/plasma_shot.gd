@@ -2,7 +2,8 @@ class_name PlasmaShot
 extends Node2D
 ## A plasma bolt from the robot's arm cannon: a hot white core in an amber glow with a short
 ## streak behind it, flying straight and very fast. It carries its AttackHitbox with it and,
-## the moment it touches anything solid, goes off in a tiny explosion (PlasmaBurst). A bolt
+## the moment it touches anything solid or an enemy, goes off in a tiny explosion (PlasmaBurst);
+## an enemy it hits takes the hit (Enemy.take_hit). A bolt
 ## that hits nothing is dropped once it is DESPAWN_MARGIN pixels off screen.
 ##
 ## Collision is a ray along each frame's travel, so even at this speed it can't skip through a
@@ -46,7 +47,8 @@ func _ready() -> void:
 	_hitbox.rotation = direction.angle()
 	add_child(_hitbox)
 	_hitbox.set_active(true)
-	_ray.collision_mask = shooter.collision_mask if shooter != null else 0xFFFFFFFF
+	# The level and every enemy (the shooter's own mask covers both for the robot).
+	_ray.collision_mask = (shooter.collision_mask if shooter != null else 0xFFFFFFFF) | Enemy.ENEMY_LAYER
 	if shooter != null:
 		_ray.exclude = [shooter.get_rid()]
 	_ray.collide_with_areas = false
@@ -64,6 +66,11 @@ func _physics_process(delta: float) -> void:
 	_ray.to = global_position + step
 	var hit := get_world_2d().direct_space_state.intersect_ray(_ray)
 	if not hit.is_empty():
+		# The bolt's hitbox may already have hit it (it reaches a little ahead); either way it's
+		# one hit, so the hitbox is told not to count it again.
+		if hit.collider is Enemy and not (hit.collider in _hitbox._hit_this_time):
+			_hitbox._hit_this_time.append(hit.collider)
+			(hit.collider as Enemy).take_hit(damage, shooter)
 		_burst(hit.position, hit.normal)
 		return
 	global_position += step

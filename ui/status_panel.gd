@@ -2,8 +2,9 @@ extends Control
 ## HUD status panel above the charge gauge: the Europa clock and the robot's three damage
 ## indicators (core, legs, systems), on the same grimy plate as the gauge.
 ##
-## A Europa day is 85 hours, so the clock runs from 00:00 to 84:59 and wraps. One full day takes
-## day_length_seconds of real time (40 minutes by default).
+## A Europa day is 85 hours, so the clock runs from 00:00 to 84:59 and wraps, one real hour a
+## day. The time comes from europa_clock.gd, shared with the main menu's sky, so it is the same in
+## every area and every save.
 ##
 ## The indicators are status lights shaped as short bars, one per part, showing its damage
 ## state: steady green when healthy, yellow with a slight pulse on mild damage, orange pulsing
@@ -12,6 +13,7 @@ extends Control
 
 ## Hours in a Europa day; the clock shows 00:00 to 84:59.
 const DAY_HOURS: int = 85
+const CLOCK := preload("res://ui/europa_clock.gd")
 const PLATE_SIZE := Vector2(116, 13)
 const RIVETS: Array = [Vector2(2, 2), Vector2(113, 10)]
 const CLOCK_POS := Vector2(4, 4)
@@ -48,9 +50,8 @@ const DEAD_COLUMNS: Array = [[11], [], [4, 5]]
 
 ## Player whose damage states are shown.
 @export var player: Player
-## Real seconds for one full Europa day.
+## Unused: the clock runs from europa_clock.gd. Kept so scenes that still set them load.
 @export var day_length_seconds: float = 2400.0
-## Europa time the clock starts at, in minutes past 00:00.
 @export var start_minutes: float = 0.0
 ## Chance per frame that an indicator flickers dim for a frame.
 @export_range(0.0, 1.0, 0.005) var flicker_chance: float = 0.01
@@ -65,7 +66,7 @@ var _states: Array[int] = [0, 0, 0]
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	europa_minutes = start_minutes
+	europa_minutes = CLOCK.minutes()
 	var clock_rect := Rect2(CLOCK_POS, Vector2(HudDraw.text_width("00:00"), HudDraw.GLYPH_HEIGHT))
 	var bars_rect := Rect2(BARS_X - 1, 3, PLATE_SIZE.x - BARS_X - 4, 7)
 	_grime = HudDraw.roll_grime(PLATE_SIZE, 13, 30, [clock_rect, bars_rect])
@@ -77,8 +78,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_time += delta
-	var day_minutes := DAY_HOURS * 60.0
-	europa_minutes = fmod(europa_minutes + delta * day_minutes / day_length_seconds, day_minutes)
+	europa_minutes = CLOCK.minutes()
 	queue_redraw()
 
 

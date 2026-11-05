@@ -1,6 +1,7 @@
 extends "res://ui/pause_menu.gd"
-## The main menu: big neon plaques bolted to a frozen steel column in the middle of a gray
-## screen. CONTINUE (only when there are saves; it resumes the most recent one), LOAD STATION,
+## The main menu: big neon plaques over the Europa vista (europa_vista.gd: the complex, Jupiter,
+## the day and the wind), under the SIRYN logo (menu_title.gd).
+## CONTINUE (only when there are saves; it resumes the most recent one), LOAD STATION,
 ## NEW GAME, SETTINGS and EXIT. Without saves NEW GAME takes the top spot.
 ##
 ## Built on the pause menu, so it shares the step-scripted mechanics, the neon, the settings
@@ -10,11 +11,13 @@ extends "res://ui/pause_menu.gd"
 ## lowered from the top on chains, and the slots show more of each save.
 ##
 ## Europa is cold: frost crusts the top edges, icicles hang under the plaques and the displays,
-## the glass is frosted at its corners, ice chips shake loose when a plaque judders, and a few
-## flakes drift across the background. All kept faint, so the buttons stay the focus.
+## the glass is frosted at its corners and ice chips shake loose when a plaque judders. All kept
+## faint, so the buttons stay the focus.
 
 const MENU_LABELS: Array[String] = ["CONTINUE", "LOAD STATION", "NEW GAME", "SETTINGS", "EXIT"]
 const PLAYGROUND_SCENE: String = "res://tests/movement_playground.tscn"
+const VISTA := preload("res://ui/europa_vista.gd")
+const TITLE := preload("res://ui/menu_title.gd")
 const BG := Color(0.3, 0.31, 0.33)
 const BG_SHADE := Color(0.2, 0.21, 0.23)
 const LED_AMBER := Color(1.0, 0.55, 0.12)
@@ -36,7 +39,6 @@ const MENU_PUSH: int = 4
 ## Where the middle of the button stack sits, as a fraction of the screen height. Low, to leave
 ## the top for the game's title.
 const STACK_Y: float = 0.7
-const COLUMN_W: int = 16
 ## What makes each plaque its own: width change, grime seed, lamp ("ok", "dead", "flicker"),
 ## letter whose tube is failing (-1 none), dangling cable ("plug", "loop", "frayed", "none"),
 ## welded patch, crack, pixels it hangs low on a broken bracket, and how frosted it is.
@@ -78,8 +80,6 @@ var _cursor_alpha: float = 0.0
 var _hover_t: float = 0.0
 var _click_left: float = 0.0
 var _dev_menu: Control
-var _snow: Array[Vector3] = []
-var _column_grime: Array = []
 var _panel_ice: Array = []
 var _temp_text: Dictionary
 
@@ -98,13 +98,15 @@ func _ready() -> void:
 	slider_w = 70
 	settings_big = true
 	super()
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 404
-	for i in 46:
-		_snow.append(Vector3(rng.randf_range(0, 480), rng.randf_range(0, 270), rng.randf()))
-	for i in 60:
-		_column_grime.append([Vector2(rng.randi_range(0, COLUMN_W - 1), rng.randi_range(0, 400)),
-				RUST_COLORS[rng.randi_range(0, RUST_COLORS.size() - 1)]])
+	# The vista goes on a layer of its own behind the menu.
+	var backdrop := CanvasLayer.new()
+	backdrop.layer = -1
+	add_child(backdrop)
+	backdrop.add_child(VISTA.new())
+	# The title hangs in front of the vista but behind the plaques and the displays.
+	var title := TITLE.new()
+	title.set("menu", self)
+	backdrop.add_child(title)
 	for i in _panels.size():
 		_panel_ice.append(_roll_icicles(panel_size.x - 10, 900 + i, 1.2))
 	_temp_text = _build_text("-171 C", 1, 1, SMALL_GLYPHS)
@@ -116,16 +118,6 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	super(delta)
 	_update_cursor(delta)
-	for i in _snow.size():
-		var f := _snow[i]
-		f.y += delta * (6.0 + f.z * 8.0)
-		f.x += delta * (sin(_time * 0.4 + f.z * 9.0) * 3.0 - 2.0)
-		if f.y > 272.0:
-			f.y = -2.0
-			f.x = randf_range(0, _screen_size().x)
-		if f.x < -2.0:
-			f.x += _screen_size().x + 4.0
-		_snow[i] = f
 	for b in _buttons:
 		if int(b.style.faulty) < 0:
 			continue
@@ -273,6 +265,12 @@ func _button_rect(index: int) -> Rect2i:
 			Vector2i(w, BIG_H))
 
 
+## Top of the button stack, so the title can sit centred between it and the top edge.
+func stack_top() -> int:
+	var stack_h := MENU_STEP * (_buttons.size() - 1) + BIG_H
+	return roundi(_screen_size().y * STACK_Y - stack_h * 0.5)
+
+
 func _rod_mouth(index: int) -> Vector2:
 	var r := _button_rect(index)
 	return Vector2(r.position.x + 4, r.position.y + BIG_H - 2)
@@ -303,15 +301,6 @@ func _draw() -> void:
 
 func _draw_background() -> void:
 	var screen := _screen_size()
-	draw_rect(Rect2(Vector2.ZERO, screen), BG)
-	# Darker towards the edges, in a few stepped bands.
-	for k in 6:
-		var c := BG_SHADE
-		c.a = 0.09
-		draw_rect(Rect2(0, 0, screen.x, 6 + k * 5), c)
-		draw_rect(Rect2(0, screen.y - 6 - k * 5, screen.x, 6 + k * 5), c)
-		draw_rect(Rect2(0, 0, 8 + k * 7, screen.y), c)
-		draw_rect(Rect2(screen.x - 8 - k * 7, 0, 8 + k * 7, screen.y), c)
 	# Frost creeping in from the screen corners.
 	for corner in 4:
 		var origin := Vector2(0 if corner % 2 == 0 else screen.x - 1, 0 if corner < 2 else screen.y - 1)
@@ -324,50 +313,6 @@ func _draw_background() -> void:
 			var c := FROST
 			c.a = 0.16 * (1.0 - d.length() / 36.0)
 			draw_rect(Rect2(origin + d * dir, Vector2.ONE), c)
-	for f in _snow:
-		var c := FROST
-		c.a = 0.18 + f.z * 0.25
-		draw_rect(Rect2(Vector2(f.x, f.y).floor(), Vector2.ONE), c)
-	_draw_column(screen)
-
-
-## The steel column the plaques are bolted to, with a frosted pipe and a cable bundle.
-func _draw_column(screen: Vector2) -> void:
-	var x0 := int(screen.x * 0.5) - (COLUMN_W >> 1)
-	var h := int(screen.y)
-	draw_rect(Rect2(x0 + 3, 0, COLUMN_W, h), Color(0, 0, 0, 0.25))
-	draw_rect(Rect2(x0, 0, COLUMN_W, h), TRUSS_DARK)
-	draw_rect(Rect2(x0, 0, 3, h), TRUSS_MID)
-	draw_rect(Rect2(x0 + COLUMN_W - 3, 0, 3, h), TRUSS_MID)
-	draw_rect(Rect2(x0, 0, 1, h), TRUSS_LIGHT)
-	draw_rect(Rect2(x0 + COLUMN_W - 3, 0, 1, h), TRUSS_LIGHT.darkened(0.2))
-	for y in range(5, h, 11):
-		draw_rect(Rect2(x0 + 1, y, 1, 1), HudDraw.RIVET_COLOR)
-		draw_rect(Rect2(x0 + COLUMN_W - 2, y + 4, 1, 1), HudDraw.RIVET_COLOR)
-	for g in _column_grime:
-		var gp: Vector2 = g[0]
-		if gp.y < h:
-			draw_rect(Rect2(Vector2(x0, 0) + gp, Vector2.ONE), g[1])
-	# Frost on the flanges' left edge, thicker high up.
-	for y in range(0, h, 2):
-		if hash(y * 13) % 5 < 2:
-			var c := FROST
-			c.a = 0.35
-			draw_rect(Rect2(x0 - 1, y, 1, 1 + hash(y) % 2), c)
-	# Pipe down the right side with frost rings, and a cable bundle with ties on the left.
-	var px := x0 + COLUMN_W + 2
-	draw_rect(Rect2(px, 0, 4, h), ROD_COLORS[1])
-	draw_rect(Rect2(px, 0, 1, h), ROD_COLORS[0])
-	draw_rect(Rect2(px + 3, 0, 1, h), ROD_COLORS[2])
-	for y in range(9, h, 23):
-		draw_rect(Rect2(px - 1, y, 6, 2), ICE_DEEP)
-		draw_rect(Rect2(px - 1, y, 6, 1), FROST)
-	var cx := x0 - 5
-	for k in 3:
-		var colors := [Color(0.06, 0.06, 0.07), CABLE_COLOR, Color(0.13, 0.17, 0.23)]
-		draw_rect(Rect2(cx + k, 0, 1, h), colors[k])
-	for y in range(14, h, 19):
-		draw_rect(Rect2(cx - 1, y, 5, 1), TRUSS_MID)
 
 
 func _draw_button(index: int) -> void:

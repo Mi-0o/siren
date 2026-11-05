@@ -241,7 +241,8 @@ func _scorch_surfaces() -> void:
 	var space := get_world_2d().direct_space_state
 	_ray.collide_with_areas = false
 	if attacker is CollisionObject2D:
-		_ray.collision_mask = (attacker as CollisionObject2D).collision_mask
+		# The level only: enemies don't stop the blast or take scorch marks.
+		_ray.collision_mask = (attacker as CollisionObject2D).collision_mask & ~Enemy.ENEMY_LAYER
 		_ray.exclude = [(attacker as CollisionObject2D).get_rid()]
 	var scorch := Scorch.new()
 	scorch.set_solids(space, _ray.collision_mask, _ray.exclude)

@@ -4,8 +4,9 @@ extends RefCounted
 ## catches up.
 ##
 ## A slot holds everything needed to put the game back: the robot's position, charge and the
-## damage state of each part, the Europa clock, the scene, plus what the menus show (the real
-## date and time of the save, and the area and station it was made at). An empty Dictionary is
+## damage state of each part, the scene, plus what the menus show (the real date and time of the
+## save, the Europa time it was made at, and the area and station). The Europa clock itself is
+## shared by every save (europa_clock.gd), so loading doesn't change it. An empty Dictionary is
 ## an empty slot.
 ##
 ## The active slot is the one the save stations write to. Loading a slot or saving into another
@@ -111,8 +112,9 @@ static func capture(player: Player, clock: Node, area: String, station: String) 
 	return data
 
 
-## Puts the robot and the clock back as the slot recorded them.
-static func apply(data: Dictionary, player: Player, clock: Node) -> void:
+## Puts the robot back as the slot recorded it. The clock is left alone: it is the same for
+## every save.
+static func apply(data: Dictionary, player: Player, _clock: Node) -> void:
 	if player != null:
 		# Damage first: healing a core fault revives the robot, so charge sticks afterwards.
 		player.set_damage(Player.Part.CORE, int(data.get("core", 0)) as Player.Damage)
@@ -125,8 +127,6 @@ static func apply(data: Dictionary, player: Player, clock: Node) -> void:
 		player.reset_physics_interpolation()
 		if player.has_method("_set_charge"):
 			player.call("_set_charge", float(data.get("charge", player.max_charge)))
-	if clock != null and "europa_minutes" in clock:
-		clock.set("europa_minutes", float(data.get("europa_minutes", 0.0)))
 
 
 static func _ensure_loaded() -> void:

@@ -5,8 +5,8 @@ extends Area2D
 ## hit. Every active hitbox is in the "attack_hitboxes" group, which the dev menu's
 ## SHOW HITBOXES overlay draws in red.
 ##
-## There is nothing to hit yet: hits are reported through the hit signal for enemies and
-## breakables to come.
+## Hits are reported through the hit signal, and anything hit that has take_hit() (enemies) gets
+## it called with the damage and the attacker.
 
 ## Emitted once per target per activation, for any body or area that isn't the attacker.
 signal hit(target: Node2D)
@@ -17,6 +17,9 @@ const GROUP: StringName = &"attack_hitboxes"
 @export var damage: float = 1.0
 ## Who made the attack: never hit, and never reported.
 var attacker: Node
+## When not empty, the only things this hitbox hits (an enemy attacking the robot or one
+## other enemy, not its own pack).
+var only: Array[Node] = []
 
 var _active: bool = false
 var _hit_this_time: Array[Node] = []
@@ -55,7 +58,12 @@ func set_active(active: bool) -> void:
 func _on_touch(target: Node2D) -> void:
 	if not _active or target == attacker or target in _hit_this_time:
 		return
+	if not only.is_empty() and target not in only:
+		return
 	if target is AttackHitbox:
 		return
 	_hit_this_time.append(target)
+	# Whatever can take a hit (enemies) is told who hit it.
+	if target.has_method(&"take_hit"):
+		target.call(&"take_hit", damage, attacker)
 	hit.emit(target)

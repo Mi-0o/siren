@@ -41,6 +41,10 @@ enum Action { CONTINUE, LOAD_STATION, SETTINGS, EXIT }
 enum Mode { BUTTONS, LOAD, SETTINGS, SAVE, NEW_GAME, EXIT }
 
 const LABELS: Array[String] = ["CONTINUE", "LOAD STATION", "SETTINGS", "EXIT"]
+## The buttons once the robot is dead (open_death): back to the last save station, pick a save,
+## or leave for the main menu.
+const DEATH_LABELS: Array[String] = ["LAST STATION", "LOAD SAVE", "MAIN MENU"]
+enum DeathAction { LAST_STATION, LOAD_SAVE, MAIN_MENU }
 
 ## 5x7 neon tube glyphs, one string per row ("#" = tube). I is narrower.
 const GLYPHS: Dictionary = {
@@ -144,6 +148,7 @@ const SMALL_GLYPHS: Dictionary = {
 const SPACE_W: int = 3
 ## Preloaded rather than named by class, so it works before the editor's class cache catches up.
 const DEV_MENU_SCRIPT := preload("res://ui/dev_menu.gd")
+const DEATH_WATCH_SCRIPT := preload("res://ui/death_watch.gd")
 const SAVE_SLOTS := preload("res://save/save_slots.gd")
 
 ## Where EXIT goes once confirmed.
@@ -389,6 +394,14 @@ var _saved_slot: int = -1
 var _exit_choice: int = 0
 ## True once EXIT is confirmed, while the screen dies before the main menu loads.
 var _exiting: bool = false
+## Set by open_death: the robot is dead and the menu shows the death sign and buttons. It can't be
+## closed, only left by reloading or quitting, and the game still runs underneath.
+var _dead: bool = false
+## How far the death screen's darkening has come in, 0 to 1.
+var _death_fade: float = 0.0
+var _sign_tube: Color = SIGN_TUBE
+var _sign_core: Color = SIGN_CORE
+var _sign_ghost: Color = SIGN_GHOST
 ## Display layout. The main menu sets bigger ones before its _ready runs.
 var panel_size: Vector2i = PANEL_SIZE
 var panel_screen: Rect2i = PANEL_SCREEN
@@ -441,23 +454,8 @@ func _ready() -> void:
 	_ice.colors = [FROST, ICE, ICE_DEEP]
 	_ice.gravity = 140.0
 	_ice.damping = 0.5
-	for i in LABELS.size():
-		var text := _build_text(LABELS[i], 1, 2)
-		var plaque_seed := 71 + i * 13
-		_buttons.append({
-			"text": text,
-			"track": MechTrack.new(),
-			"select": MechTrack.new(),
-			"light": NeonLight.new(),
-			"grime": _roll_plaque_grime(plaque_seed),
-			"frost": _roll_frost(PLAQUE_SIZE.x, PLAQUE_SIZE.y, plaque_seed + 3, MENU_FROST),
-			"icicles": _roll_icicles(PLAQUE_SIZE.x, plaque_seed + 4, MENU_FROST),
-			"jolt": MechTrack.new(),
-		})
+	_buttons = _make_buttons(LABELS)
 	_build_sign()
-	var sign_w := _sign_text_size.x + SIGN_PAD.x * 2
-	_sign_frost = _roll_edge_frost(sign_w, 61, MENU_FROST)
-	_sign_icicles = _roll_icicles(sign_w, 62, MENU_FROST)
 	for i in PANEL_TITLES.size():
 		_panel_frost.append(_roll_edge_frost(panel_size.x - PANEL_CHAMFER - 4, 331 + i,
 				MENU_FROST))
@@ -477,6 +475,13 @@ func _ready() -> void:
 	for i in SAVE_SLOTS.PAGE_COUNT:
 		_page_texts.append(_build_text(str(i + 1), 2, 1, SMALL_GLYPHS))
 	_arrow_texts = [_build_text("<", 2, 1, SMALL_GLYPHS), _build_text(">", 2, 1, SMALL_GLYPHS)]
+	# The death watch (robot's core faults or it falls out of the level) lives under the menu too.
+	if player != null:
+		var watch: Node = DEATH_WATCH_SCRIPT.new()
+		watch.set("player", player)
+		watch.set("menu", self)
+		watch.process_mode = Node.PROCESS_MODE_PAUSABLE
+		add_child(watch)
 	# A save picked in the main menu is waiting for this scene: put the robot back as saved.
 	if not SAVE_SLOTS.pending_load.is_empty():
 		var pending: Dictionary = SAVE_SLOTS.pending_load
@@ -504,7 +509,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			open()
 		elif _mode != Mode.BUTTONS:
 			_go_back()
-		else:
+		elif not _dead:
 			close()
 		get_viewport().set_input_as_handled()
 		return
@@ -573,6 +578,34 @@ func open_save(info: Dictionary) -> void:
 	opened.emit()
 
 
+## The robot is dead: the sign drops with message in red and the buttons offer the last station,
+## a save, or the main menu. The game keeps running underneath, and there's no closing it.
+func open_death(message: String) -> void:
+	if is_open:
+		close()
+	_unlock_frame = -1
+	_exiting = false
+	_dead = true
+	_set_sign(message, 2, DEV_TUBE, DEV_CORE, DEV_GHOST)
+	_buttons = _make_buttons(DEATH_LABELS)
+	open()
+
+
+## Back to the normal pause menu, for when the robot is brought back without a reload (the dev
+## menu healing a core fault).
+func close_death() -> void:
+	if not _dead:
+		return
+	_dead = false
+	close()
+	_set_sign(SIGN_TEXT, SIGN_SCALE, SIGN_TUBE, SIGN_CORE, SIGN_GHOST)
+	_buttons = _make_buttons(LABELS)
+
+
+func is_dead_screen() -> bool:
+	return _dead
+
+
 func _apply_pending(data: Dictionary) -> void:
 	SAVE_SLOTS.apply(data, player, _clock())
 
@@ -598,7 +631,7 @@ func close() -> void:
 func _physics_process(_delta: float) -> void:
 	if _unlock_frame >= 0 and Engine.get_physics_frames() >= _unlock_frame:
 		_unlock_frame = -1
-		if player != null:
+		if player != null and not _dead:
 			player.controls_locked = false
 
 
@@ -610,6 +643,7 @@ func _process(delta: float) -> void:
 		return
 	_glitch_left = maxf(_glitch_left - delta, 0.0)
 	_saved_left = maxf(_saved_left - delta, 0.0)
+	_death_fade = move_toward(_death_fade, 1.0 if _dead else 0.0, delta / 1.5)
 	_back_press.update(delta)
 	for press in _page_press:
 		press.update(delta)
@@ -665,6 +699,9 @@ func _draw() -> void:
 	_draw_dev_sign()
 	if not _active:
 		return
+	if _death_fade > 0.0:
+		# Dead: the view sinks into a dim red murk (drawn over the world, under the menu).
+		draw_rect(Rect2(Vector2.ZERO, _screen_size()), Color(0.05, 0.0, 0.0, 0.5 * _death_fade))
 	_draw_sign()
 	for i in _buttons.size():
 		_draw_button(i)
@@ -701,6 +738,15 @@ func _select(index: int) -> void:
 
 
 func _confirm() -> void:
+	if _dead:
+		match selected:
+			DeathAction.LAST_STATION:
+				_reload_last_station()
+			DeathAction.LOAD_SAVE:
+				_show_panel(Mode.LOAD)
+			DeathAction.MAIN_MENU:
+				_leave_dead(MAIN_MENU_SCENE)
+		return
 	match selected:
 		Action.CONTINUE:
 			close()
@@ -1079,7 +1125,7 @@ func _draw_sign() -> void:
 		# Standoffs that hold each letter off the truss.
 		draw_rect(Rect2(lp.x + 2, lp.y - 2, 1, 2), TRUSS_DARK)
 		draw_rect(Rect2(lp.x + letter.w - 3, lp.y + _sign_text_size.y, 1, 2), TRUSS_DARK)
-		_draw_neon(letter.text, lp, level, 1.0, SIGN_TUBE, SIGN_CORE, SIGN_GHOST)
+		_draw_neon(letter.text, lp, level, 1.0, _sign_tube, _sign_core, _sign_ghost)
 
 
 ## Draws prepared neon text (from _build_text) with its top left at pos. level is how lit the
@@ -1123,18 +1169,47 @@ func _pixel_line(a: Vector2i, b: Vector2i, color: Color) -> void:
 # --- Text ------------------------------------------------------------------------------------
 
 
-func _build_sign() -> void:
+func _build_sign(message: String = SIGN_TEXT, cell: int = SIGN_SCALE) -> void:
 	var x := 0
 	_sign_letters.clear()
-	for ch in SIGN_TEXT:
+	for ch in message:
 		if ch == " ":
-			x += SIGN_WORD_GAP - SIGN_LETTER_GAP
+			x += (SIGN_WORD_GAP - SIGN_LETTER_GAP) * cell
 			continue
-		var text := _build_text(ch, SIGN_SCALE, 2)
+		var text := _build_text(ch, cell, 2)
 		_sign_letters.append({"text": text, "x": x, "w": text.dims.x})
-		x += text.dims.x + SIGN_LETTER_GAP
+		x += text.dims.x + SIGN_LETTER_GAP * cell
 	var letter_h: int = (_sign_letters[0].text as Dictionary).dims.y
-	_sign_text_size = Vector2i(x - SIGN_LETTER_GAP, letter_h)
+	_sign_text_size = Vector2i(x - SIGN_LETTER_GAP * cell, letter_h)
+	var sign_w := _sign_text_size.x + SIGN_PAD.x * 2
+	_sign_frost = _roll_edge_frost(sign_w, 61, MENU_FROST)
+	_sign_icicles = _roll_icicles(sign_w, 62, MENU_FROST)
+
+
+## Swaps the sign's text, size and tube colour.
+func _set_sign(message: String, cell: int, tube: Color, core: Color, ghost: Color) -> void:
+	_build_sign(message, cell)
+	_sign_tube = tube
+	_sign_core = core
+	_sign_ghost = ghost
+
+
+## A plaque for each label, each with its own grime, frost and icicles.
+func _make_buttons(labels: Array[String]) -> Array[Dictionary]:
+	var made: Array[Dictionary] = []
+	for i in labels.size():
+		var plaque_seed := 71 + i * 13
+		made.append({
+			"text": _build_text(labels[i], 1, 2),
+			"track": MechTrack.new(),
+			"select": MechTrack.new(),
+			"light": NeonLight.new(),
+			"grime": _roll_plaque_grime(plaque_seed),
+			"frost": _roll_frost(PLAQUE_SIZE.x, PLAQUE_SIZE.y, plaque_seed + 3, MENU_FROST),
+			"icicles": _roll_icicles(PLAQUE_SIZE.x, plaque_seed + 4, MENU_FROST),
+			"jolt": MechTrack.new(),
+		})
+	return made
 
 
 ## Prepares text for _draw_neon: tube pixels in glyph units, glow rings around them in screen
@@ -2384,11 +2459,62 @@ func _save_into(index: int) -> void:
 	_sparks.emit(Vector2(r.end.x - 8, r.position.y + 1), 4, -PI / 2.0, 1.2, 20.0, 55.0, 0.12, 0.3)
 
 
-## Loads a slot and puts the menu away; the robot wakes up where the slot was saved.
+## Loads a slot and puts the menu away; the robot wakes up where the slot was saved. Once dead,
+## the scene is loaded fresh instead, the way the main menu loads a save.
 func _load_slot(index: int) -> void:
+	if _dead:
+		_reload_slot(index)
+		return
 	SAVE_SLOTS.set_active(index)
 	SAVE_SLOTS.apply(SAVE_SLOTS.get_slot(index), player, _clock())
 	close()
+
+
+## Dead: back to the last save station, i.e. the save being played (or else the newest one). With
+## no save at all, the area starts over.
+func _reload_last_station() -> void:
+	var index := SAVE_SLOTS.get_active()
+	if SAVE_SLOTS.is_empty(index):
+		index = SAVE_SLOTS.latest()
+	if index >= 0:
+		_reload_slot(index)
+		return
+	SAVE_SLOTS.pending_load = {}
+	_leave_dead(get_tree().current_scene.scene_file_path)
+
+
+func _reload_slot(index: int) -> void:
+	var data := SAVE_SLOTS.get_slot(index)
+	SAVE_SLOTS.set_active(index)
+	SAVE_SLOTS.pending_load = data.duplicate(true)
+	var scene := str(data.get("scene", ""))
+	if scene.is_empty():
+		scene = get_tree().current_scene.scene_file_path
+	_leave_dead(scene)
+
+
+## Leaves the dead game for scene: the chosen plaque (or display) shorts out, then it loads.
+func _leave_dead(scene: String) -> void:
+	if _exiting:
+		return
+	_exiting = true
+	_glitch_left = GLITCH_TIME * 3.0
+	var spot := Vector2.ZERO
+	if _mode == Mode.BUTTONS:
+		(_buttons[selected].light as NeonLight).fault(EXIT_DELAY)
+		var r := _button_rect(selected)
+		spot = Vector2(r.position) + Vector2(1, HALF_PLAQUE_H)
+	else:
+		(_panels[_panel_index()].light as NeonLight).fault(EXIT_DELAY)
+		var r := _panel_rect(_panel_index())
+		spot = Vector2(r.position) + Vector2(1, _rng.randi_range(PANEL_CHAMFER, 40))
+	_sparks.emit(spot, 6, PI, 1.2, 20.0, 60.0, 0.15, 0.35)
+	get_tree().create_timer(EXIT_DELAY, true).timeout.connect(_change_scene.bind(scene))
+
+
+func _change_scene(scene: String) -> void:
+	get_tree().paused = false
+	get_tree().change_scene_to_file(scene)
 
 
 func _clock() -> Node:

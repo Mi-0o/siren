@@ -4,15 +4,24 @@ extends Control
 ## while dev mode is on in the settings. Mouse only: the cursor shows while it's open and the
 ## keyboard keeps driving the robot. Keeps working while the game is paused from here.
 ##
-## Rows: FLY, NOCLIP, PAUSE, ZOOM (a slider from 0.25x to 4x for the active camera, kept across
-## scenes until the game restarts) and RESET ZOOM, SHOW HITBOXES toggles (the last draws every collision shape and
-## live attack hitbox, see HitboxOverlay), REMOVE BURNS (clears every scorch mark and the
-## burst's smoke), ADD CANNON CHARGE (one more burst), CHARGE, which unfolds into NO CHARGE USE
-## (nothing drains charge), INFINITE REGEN (charge climbs 100/s), a charge slider with its value
-## and SET CHARGE to apply it, then DAMAGE, which unfolds into CORE, LEGS and SYSTEMS,
-## each with HEALTHY, MILD DAMAGE, HEAVY DAMAGE and FAULT, which set that part's state, plus
-## RESTORE ALL to set every part healthy. OPEN PLAYGROUND and OPEN MAIN MENU at the top switch
-## to those scenes; the robot rows do nothing where there's no robot (the main menu).
+## The rows are grouped into categories, each folding open and shut with a click on its heading
+## (they stay as left until the game restarts):
+## - SCENES: OPEN PLAYGROUND, OPEN MAIN MENU.
+## - ROBOT: FLY, NOCLIP, ADD CANNON CHARGE, then CHARGE, which unfolds into NO CHARGE USE
+##   (nothing drains charge), INFINITE REGEN (charge climbs 100/s), a charge slider with its
+##   value and SET CHARGE to apply it, and DAMAGE, which unfolds into CORE, LEGS and SYSTEMS,
+##   each with HEALTHY, MILD DAMAGE, HEAVY DAMAGE and FAULT, plus RESTORE ALL. The robot rows do
+##   nothing where there's no robot (the main menu).
+## - ENEMIES (with how many there are): SPAWN RABBIT BOT and SPAWN WATCHER (drop one on the
+##   floor a little ahead of the robot), HURT ALL (HEAVY) and KILL ALL (set every enemy's core
+##   to heavy, or destroy them, leaving wrecks), CLEAR ENEMIES (removes every enemy, underground
+##   ones and wrecks too).
+## - WORLD: PAUSE, the SKY slider (the Europa clock) and LET THE SKY RUN, REMOVE BURNS (clears
+##   every scorch mark and the burst's smoke).
+## - VIEW: ZOOM (a slider from 0.25x to 4x for the active camera, kept across scenes until the
+##   game restarts), RESET ZOOM, SHOW HITBOXES (draws every collision shape and live attack
+##   hitbox, see HitboxOverlay), SHOW HEALTH (a small light above the robot and every enemy
+##   showing its core damage stage, see CoreLight).
 ##
 ## The thin bar along the top drags the panel anywhere on screen. It keeps that spot when closed
 ## and reopened, and across scene changes, until the game restarts or goes back to the main
@@ -42,11 +51,19 @@ const SUBSYSTEMS: Array[String] = ["CORE", "LEGS", "SYSTEMS"]
 const SPACE_W: int = 3
 const PLAYGROUND_SCENE: String = "res://tests/movement_playground.tscn"
 const MAIN_MENU_SCENE: String = "res://ui/main_menu.tscn"
+const CLOCK := preload("res://ui/europa_clock.gd")
+const RABBIT_BOT_SCENE: String = "res://enemies/rabbit_bot/rabbit_bot.tscn"
+const WATCHER_SCENE: String = "res://enemies/watcher_bot/watcher_bot.tscn"
+## How far ahead of the robot the SPAWN rows drop an enemy, in px.
+const SPAWN_AHEAD: float = 80.0
 ## Zoom slider range, as powers of two: 0.25x to 4x.
 const ZOOM_MIN_EXP: float = -2.0
 const ZOOM_MAX_EXP: float = 2.0
 ## Camera zoom set here, applied again to each scene's camera.
 static var zoom: float = 1.0
+## The categories, top to bottom, and which are unfolded (kept across scenes).
+const CATEGORIES: Array[String] = ["SCENES", "ROBOT", "ENEMIES", "WORLD", "VIEW"]
+static var _cat_open: Dictionary = {}
 
 ## The robot the tools act on.
 var player: Player
@@ -190,7 +207,7 @@ func _gui_input(event: InputEvent) -> void:
 			elif _overflows() and button.position.x >= PANEL_W - 5 and button.position.y >= _top():
 				_scrolling = true
 				_scroll_to(button.position.y)
-			elif row >= 0 and _rows[row].kind in ["slider", "zoom"]:
+			elif row >= 0 and _rows[row].kind in ["slider", "zoom", "sky"]:
 				_dragging = true
 				_drag_id = _rows[row].id
 				_slide_to(button.position.x)
@@ -233,33 +250,11 @@ func _scroll_to(y: float) -> void:
 ## outside it fall through.
 func _rebuild() -> void:
 	_rows.clear()
-	_rows.append({"label": "OPEN PLAYGROUND", "kind": "button", "id": "playground", "indent": 0})
-	_rows.append({"label": "OPEN MAIN MENU", "kind": "button", "id": "main_menu", "indent": 0})
-	_rows.append({"label": "FLY", "kind": "toggle", "id": "fly", "indent": 0})
-	_rows.append({"label": "NOCLIP", "kind": "toggle", "id": "noclip", "indent": 0})
-	_rows.append({"label": "PAUSE", "kind": "toggle", "id": "pause", "indent": 0})
-	_rows.append({"label": "ZOOM", "kind": "zoom", "id": "zoom", "indent": 0})
-	_rows.append({"label": "RESET ZOOM", "kind": "button", "id": "reset_zoom", "indent": 0})
-	_rows.append({"label": "SHOW HITBOXES", "kind": "toggle", "id": "hitboxes", "indent": 0})
-	_rows.append({"label": "REMOVE BURNS", "kind": "button", "id": "burns", "indent": 0})
-	_rows.append({"label": "ADD CANNON CHARGE", "kind": "button", "id": "cannon", "indent": 0})
-	_rows.append({"label": "CHARGE", "kind": "fold", "id": "charge", "indent": 0})
-	if _charge_open:
-		_rows.append({"label": "NO CHARGE USE", "kind": "toggle", "id": "no_charge_use",
-				"indent": 1})
-		_rows.append({"label": "INFINITE REGEN", "kind": "toggle", "id": "regen", "indent": 1})
-		_rows.append({"label": "", "kind": "slider", "id": "charge_slider", "indent": 1})
-		_rows.append({"label": "SET CHARGE", "kind": "button", "id": "set_charge", "indent": 1})
-	_rows.append({"label": "DAMAGE", "kind": "fold", "id": "damage", "indent": 0})
-	if _damage_open:
-		for i in SUBSYSTEMS.size():
-			_rows.append({"label": SUBSYSTEMS[i], "kind": "fold", "id": "sub", "sub": i,
-					"indent": 1})
-			if _sub_open[i]:
-				for option in DAMAGE_OPTIONS:
-					_rows.append({"label": option, "kind": "button", "id": option, "sub": i,
-							"indent": 2})
-		_rows.append({"label": "RESTORE ALL", "kind": "button", "id": "restore", "indent": 1})
+	for cat in CATEGORIES:
+		_rows.append({"label": cat, "kind": "category", "id": "category", "cat": cat,
+				"indent": 0})
+		if _cat_open.get(cat, false):
+			_category_rows(cat)
 	# As many rows as fit between the panel's top and the bottom of the screen.
 	var room := get_viewport_rect().size.y - position.y - _top() - 3
 	_shown = mini(_rows.size(), maxi(floori(room / ROW_H), MIN_ROWS))
@@ -267,8 +262,63 @@ func _rebuild() -> void:
 	size = Vector2(PANEL_W, _top() + _shown * ROW_H + 3)
 
 
+## The rows inside a category, one indent in.
+func _category_rows(cat: String) -> void:
+	match cat:
+		"SCENES":
+			_add("OPEN PLAYGROUND", "button", "playground")
+			_add("OPEN MAIN MENU", "button", "main_menu")
+		"ROBOT":
+			_add("FLY", "toggle", "fly")
+			_add("NOCLIP", "toggle", "noclip")
+			_add("ADD CANNON CHARGE", "button", "cannon")
+			_add("CHARGE", "fold", "charge")
+			if _charge_open:
+				_add("NO CHARGE USE", "toggle", "no_charge_use", 2)
+				_add("INFINITE REGEN", "toggle", "regen", 2)
+				_add("", "slider", "charge_slider", 2)
+				_add("SET CHARGE", "button", "set_charge", 2)
+			_add("DAMAGE", "fold", "damage")
+			if _damage_open:
+				for i in SUBSYSTEMS.size():
+					_rows.append({"label": SUBSYSTEMS[i], "kind": "fold", "id": "sub", "sub": i,
+							"indent": 2})
+					if _sub_open[i]:
+						for option in DAMAGE_OPTIONS:
+							_rows.append({"label": option, "kind": "button", "id": option,
+									"sub": i, "indent": 3})
+				_add("RESTORE ALL", "button", "restore", 2)
+		"ENEMIES":
+			_add("SPAWN RABBIT BOT", "button", "spawn_rabbit")
+			_add("SPAWN WATCHER", "button", "spawn_watcher")
+			_add("HURT ALL (HEAVY)", "button", "hurt_enemies")
+			_add("KILL ALL", "button", "kill_enemies")
+			_add("CLEAR ENEMIES", "button", "clear_enemies")
+		"WORLD":
+			_add("PAUSE", "toggle", "pause")
+			_add("SKY", "sky", "sky")
+			_add("LET THE SKY RUN", "button", "sky_live")
+			_add("REMOVE BURNS", "button", "burns")
+		"VIEW":
+			_add("ZOOM", "zoom", "zoom")
+			_add("RESET ZOOM", "button", "reset_zoom")
+			_add("SHOW HITBOXES", "toggle", "hitboxes")
+			_add("SHOW HEALTH", "toggle", "health")
+
+
+func _add(label: String, kind: String, id: String, indent: int = 1) -> void:
+	_rows.append({"label": label, "kind": kind, "id": id, "indent": indent})
+
+
+func _enemy_count() -> int:
+	return get_tree().get_nodes_in_group(Enemy.GROUP).size() \
+			+ get_tree().get_nodes_in_group(Enemy.UNDER_GROUP).size()
+
+
 func _click(row: Dictionary) -> void:
 	match row.id:
+		"category":
+			_cat_open[row.cat] = not _cat_open.get(row.cat, false)
 		"playground", "main_menu":
 			get_tree().paused = false
 			close()
@@ -287,13 +337,30 @@ func _click(row: Dictionary) -> void:
 		"reset_zoom":
 			zoom = 1.0
 			_apply_zoom()
+		"sky_live":
+			CLOCK.release()
 		"hitboxes":
 			HitboxOverlay.set_enabled(not HitboxOverlay.enabled, self)
+		"health":
+			CoreDamage.show_lights = not CoreDamage.show_lights
 		"burns":
 			get_tree().call_group(Scorch.GROUP, &"queue_free")
 		"cannon":
 			if player != null:
 				player.add_cannon_charge(1)
+		"spawn_rabbit":
+			_spawn_enemy(RABBIT_BOT_SCENE)
+		"spawn_watcher":
+			_spawn_enemy(WATCHER_SCENE)
+		"clear_enemies":
+			get_tree().call_group(Enemy.GROUP, &"queue_free")
+			get_tree().call_group(Enemy.UNDER_GROUP, &"queue_free")
+			get_tree().call_group(Enemy.WRECK_GROUP, &"queue_free")
+		"hurt_enemies", "kill_enemies":
+			var stage := 2 if row.id == "hurt_enemies" else CoreDamage.FAULT
+			for node in get_tree().get_nodes_in_group(Enemy.GROUP):
+				if node is Enemy and (node as Enemy).core_stage() < stage:
+					(node as Enemy).set_core_stage(stage)
 		"charge":
 			_charge_open = not _charge_open
 			if _charge_open and player != null:
@@ -320,6 +387,27 @@ func _click(row: Dictionary) -> void:
 	_rebuild()
 
 
+## Drops an enemy on the floor SPAWN_AHEAD px in front of the robot (or right above it when
+## there's no floor there).
+func _spawn_enemy(path: String) -> void:
+	if player == null:
+		return
+	var scene := get_tree().current_scene
+	var enemy: Node2D = (load(path) as PackedScene).instantiate()
+	var spot := player.global_position + Vector2(player.get_facing() * SPAWN_AHEAD, 0.0)
+	var ray := PhysicsRayQueryParameters2D.create(
+		spot + Vector2(0.0, -60.0), spot + Vector2(0.0, 160.0), 1, [player.get_rid()]
+	)
+	var hit := player.get_world_2d().direct_space_state.intersect_ray(ray)
+	if hit.is_empty() or not (hit.normal as Vector2).y < -0.5:
+		spot = player.global_position + Vector2(0.0, -8.0)
+	else:
+		spot = hit.position
+	enemy.set("target", player)
+	scene.add_child(enemy)
+	enemy.global_position = spot
+
+
 ## Sets one subsystem to the state a damage option names.
 func _damage(sub: int, option: String) -> void:
 	if player == null:
@@ -341,6 +429,8 @@ func _is_on(id: String) -> bool:
 			return get_tree().paused
 		"hitboxes":
 			return HitboxOverlay.enabled
+		"health":
+			return CoreDamage.show_lights
 		"no_charge_use":
 			return player != null and player.dev_no_charge_use
 		"regen":
@@ -350,12 +440,12 @@ func _is_on(id: String) -> bool:
 
 ## The slider's track, from its left to its right end, in panel x.
 func _slider_track() -> Vector2i:
-	return Vector2i(5 + INDENT, PANEL_W - 24)
+	return Vector2i(5 + 2 * INDENT, PANEL_W - 24)
 
 
-## The zoom slider's track, right of its label.
+## The zoom and sky sliders' track, right of their labels (one indent in).
 func _zoom_track() -> Vector2i:
-	return Vector2i(5 + 22, PANEL_W - 27)
+	return Vector2i(5 + INDENT + 20, PANEL_W - 27)
 
 
 ## Zooms the camera that's showing the scene. Wildly game-breaking, on purpose: it's for looking
@@ -372,6 +462,10 @@ func _slider_max() -> float:
 
 ## Moves the slider being dragged to panel x: charge in steps of 5, zoom in steps of 0.05.
 func _slide_to(x: float) -> void:
+	if _drag_id == "sky":
+		var st := _zoom_track()
+		CLOCK.override_minutes = clampf((x - st.x) / float(st.y - st.x), 0.0, 0.999) * CLOCK.DAY_MINUTES
+		return
 	if _drag_id == "zoom":
 		var zt := _zoom_track()
 		var f := clampf((x - zt.x) / float(zt.y - zt.x), 0.0, 1.0)
@@ -417,6 +511,16 @@ func _draw() -> void:
 		var x := 5 + int(row.indent) * INDENT
 		var ty := y + 3
 		match row.kind:
+			"category":
+				# A heading: a tinted strip with the fold sign, the name and, for ENEMIES, the
+				# count; a thin rule under it while it's open.
+				var unfolded: bool = _cat_open.get(row.cat, false)
+				draw_rect(Rect2(1, y, w - 2, ROW_H - 1), Color(ACCENT, 0.12))
+				_text("-" if unfolded else "+", Vector2i(x, ty), ACCENT)
+				_text(row.label, Vector2i(x + 6, ty), ACCENT)
+				if row.cat == "ENEMIES":
+					var count := str(_enemy_count())
+					_text(count, Vector2i(w - 6 - _text_width(count), ty), TEXT_DIM)
 			"toggle":
 				var on := _is_on(row.id)
 				_checkbox(Vector2i(x, ty), on)
@@ -442,6 +546,8 @@ func _draw() -> void:
 				_slider(ty, i == _hover or (_dragging and _drag_id == "charge_slider"))
 			"zoom":
 				_zoom_slider(x, ty, i == _hover or (_dragging and _drag_id == "zoom"))
+			"sky":
+				_sky_slider(x, ty, i == _hover or (_dragging and _drag_id == "sky"))
 
 
 ## The charge slider: a track filled up to the picked level, a handle, and the number.
@@ -468,6 +574,24 @@ func _zoom_slider(x: int, ty: int, hot: bool) -> void:
 	draw_rect(Rect2(mini(hx, one_x), ty + 2, absi(hx - one_x), 1), ACCENT)
 	draw_rect(Rect2(hx, ty, 1, 5), TEXT if hot else TEXT_DIM)
 	var value := "%.2fX" % zoom
+	_text(value, Vector2i(PANEL_W - 6 - _text_width(value), ty), TEXT if hot else TEXT_DIM)
+
+
+## SKY, the Europa clock (the HUD and the main menu sky): a track over one day with a tick where
+## the sun sets behind Jupiter, the handle, and the time (00:00 to 84:59), or LIVE while it runs.
+func _sky_slider(x: int, ty: int, hot: bool) -> void:
+	_text("SKY", Vector2i(x, ty), TEXT if hot else TEXT_DIM)
+	var track := _zoom_track()
+	var live: bool = CLOCK.override_minutes < 0.0
+	var f: float = CLOCK.phase()
+	var hx := track.x + int(round(f * float(track.y - track.x)))
+	var dusk_x := track.x + ((track.y - track.x) >> 1)
+	draw_rect(Rect2(track.x, ty + 2, track.y - track.x + 1, 1), Color(TEXT_DIM, 0.6))
+	draw_rect(Rect2(dusk_x, ty + 1, 1, 3), Color(TEXT_DIM, 0.8))
+	draw_rect(Rect2(track.x, ty + 2, hx - track.x, 1), ACCENT)
+	draw_rect(Rect2(hx, ty, 1, 5), TEXT if hot else TEXT_DIM)
+	var minutes := int(f * 85.0 * 60.0)
+	var value := "LIVE" if live else "%02d:%02d" % [minutes / 60, minutes % 60]
 	_text(value, Vector2i(PANEL_W - 6 - _text_width(value), ty), TEXT if hot else TEXT_DIM)
 
 

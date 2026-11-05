@@ -59,6 +59,14 @@ const HAND_MODES: Array[Mode] = [Mode.QUAD, Mode.DASH, Mode.DASH_END, Mode.SET, 
 
 ## Body parts never sink below the floor: knees and elbows keep this many pixels above it.
 const JOINT_CLEARANCE: float = 1.0
+## How much better the other bend must be before a limb switches which way its middle joint
+## bends near the floor, in pixels. Without it, a knee or elbow grazing the floor (a limb lying
+## flat, as when dead) flicks between the two bends from one frame to the next.
+const IK_HYSTERESIS: float = 2.0
+## Lying down (dead or knocked down, not pushing up), how fast a limb joint may turn, in
+## radians per second. The limbs there are slack and settle onto the floor, so a joint that would
+## jump (an elbow folding against the floor, a knee finding its side) swings over instead.
+const DOWN_LIMB_RATE: float = 7.0
 ## Body parts that lift the whole body when they would sink into the floor.
 const BODY_BONES: Array[StringName] = [
 	&"Hip", &"Waist1", &"Waist2", &"Waist3", &"Ribcage", &"Neck", &"Head",
@@ -353,6 +361,8 @@ var bones: Dictionary[StringName, Bone2D]
 
 var _display: Sprite2D
 var _mode: Mode = Mode.IDLE
+## Each limb bone's angle as last drawn (see _limit_down_limbs).
+var _limb_angles: Dictionary = {}
 var _facing: float = 1.0
 var _time_in_mode: float = 0.0
 var _near: Leg
@@ -462,6 +472,8 @@ class Leg:
 	## Where in the swing (0 to 1) a stall happens, and how long is left of it.
 	var stall_at := 2.0
 	var stall_left := 0.0
+	## Bending its middle joint the non-preferred way to keep it out of the floor.
+	var ik_flipped := false
 
 
 ## Damped spring on one value. zeta 1 settles without overshoot; lower wobbles.
@@ -501,7 +513,7 @@ func setup(visual: PlayerVisual) -> void:
 	_far_hand.thigh = bones[&"UpperArmFar"]
 	_far_hand.shin = bones[&"ForearmFar"]
 	_shift.value = body_shift
-	_ray.collision_mask = player.collision_mask
+	_ray.collision_mask = Player.SOLID_MASK
 	_ray.exclude = [player.get_rid()]
 	_facing = player.get_facing()
 	_setup_turn_parts()
@@ -650,6 +662,15 @@ func _enter(mode: Mode) -> void:
 		# Going down: the knees give and the body pitches over.
 		_hip_y.velocity += 20.0
 		_lean.velocity += 2.0
+	if mode == Mode.DOWN and was == Mode.AIR:
+		# Crashing down from the air: the legs kick out behind on impact, so the body doesn't
+		# drop straight onto feet planted right under the hip (folding the legs flat there
+		# leaves the knees nowhere stable to go, and they flip about).
+		for leg: Leg in [_near, _far]:
+			var rig := _to_rig(leg.peg)
+			rig.x = minf(rig.x, -7.0 if leg == _near else -9.0)
+			var world := _rig_to_world(rig)
+			leg.peg = Vector2(world.x, _ground_y(world.x))
 	if mode == Mode.AIR:
 		for leg: Leg in [_near, _far]:
 			leg.swinging = false
@@ -1563,7 +1584,7 @@ func _update_pose(delta: float) -> void:
 		Mode.AIR:
 			hip_h = air_hip_height
 			eye = 1.0
-			if player.is_wire_attached():
+			if player.is_wire_anchored():
 				# Hanging: the body straightens under the arm, the head tilts up to the anchor.
 				lean = 0.1
 				neck = 0.15
@@ -1902,7 +1923,7 @@ func _update_twitches(delta: float) -> void:
 	var slow := 2.5 if _mode == Mode.WALK else 1.0
 	slow /= tier_twitch_rate[_tier]
 	_twitch_wait = randf_range(twitch_interval.x, twitch_interval.y) * slow
-	if _mode == Mode.AIR or _mode == Mode.DASH or _dead:
+	if _mode == Mode.AIR or _mode == Mode.DASH or _dead or player.is_dead():
 		return
 	var bone_name: StringName = TWITCH_BONES.pick_random()
 	# The head is a stabilised camera: it only twitches once charge is low.
@@ -1969,7 +1990,22 @@ func _solve(delta: float) -> void:
 		_aim_shot_arm()
 	elif player.is_bracing() and _mode == Mode.CRAWL:
 		_aim_crawl_burst_arm()
+	_limit_down_limbs(delta)
 	player.set_arm_tip(view_world(&"ForearmNear", _hand_world(_near_hand)))
+
+
+## Lying down, limb joints turn at most DOWN_LIMB_RATE, so nothing pops from one pose to another.
+## Remembers every frame's angles, so lying down starts from the pose it was in.
+func _limit_down_limbs(delta: float) -> void:
+	var limit := _mode == Mode.DOWN and not _pushing_up
+	var step := DOWN_LIMB_RATE * delta
+	for limb: Leg in [_near, _far, _near_hand, _far_hand]:
+		for bone: Bone2D in [limb.thigh, limb.shin]:
+			if limit and _limb_angles.has(bone):
+				var last: float = _limb_angles[bone]
+				var turn := clampf(angle_difference(last, bone.rotation), -step, step)
+				bone.rotation = wrapf(last + turn, -PI, PI)
+			_limb_angles[bone] = bone.rotation
 
 
 ## No clipping: whatever the pose asks for, nothing is drawn inside the floor. A body part that
@@ -2015,21 +2051,36 @@ func _fold_free_arm(hand: Leg) -> void:
 	# Keep the elbow on the side it was already bent to, unless that side is underground.
 	var side := signf((elbow - base).cross(tip - base))
 	var bend := 1.0 if side >= 0.0 else -1.0
-	var angles := _ik_above_floor(base, target, UPPER_ARM_LENGTH, FOREARM_LENGTH, bend)
+	var angles := _ik_above_floor(base, target, UPPER_ARM_LENGTH, FOREARM_LENGTH, bend, hand)
 	hand.thigh.rotation = wrapf(angles.x - PI / 2.0 - _rib_global(), -PI, PI)
 	hand.shin.rotation = wrapf(angles.y - angles.x, -PI, PI)
 
 
 ## Two-bone IK that bends the middle joint the preferred way unless that would put it in the
-## floor, in which case it bends the other way (whichever stays higher).
-func _ik_above_floor(base: Vector2, target: Vector2, l1: float, l2: float, bend: float) -> Vector2:
+## floor, in which case it bends the other way (whichever stays higher). Given the limb, it
+## remembers which way it bent and holds it unless the other way is clearly better.
+func _ik_above_floor(
+	base: Vector2, target: Vector2, l1: float, l2: float, bend: float, limb: Leg = null
+) -> Vector2:
 	var angles := two_bone_ik(base, target, l1, l2, bend)
 	var joint := base + Vector2.from_angle(angles.x) * l1
-	if joint.y <= _floor_rig(joint.x) - JOINT_CLEARANCE:
+	# A limb already bent the other way only comes back once the preferred bend is clearly clear.
+	var flipped := limb != null and limb.ik_flipped
+	var clearance := JOINT_CLEARANCE + (IK_HYSTERESIS if flipped else 0.0)
+	if joint.y <= _floor_rig(joint.x) - clearance:
+		if limb != null:
+			limb.ik_flipped = false
 		return angles
 	var other := two_bone_ik(base, target, l1, l2, -bend)
 	var other_joint := base + Vector2.from_angle(other.x) * l1
-	return other if other_joint.y < joint.y else angles
+	if limb == null:
+		return other if other_joint.y < joint.y else angles
+	# Switch only when the other bend is better by a margin, either way.
+	if flipped:
+		limb.ik_flipped = other_joint.y < joint.y + IK_HYSTERESIS
+	else:
+		limb.ik_flipped = other_joint.y < joint.y - IK_HYSTERESIS
+	return other if limb.ik_flipped else angles
 
 
 ## Floor height under a skeleton-space x, in skeleton space; INF where there is no floor
@@ -2084,7 +2135,7 @@ func _solve_hand(hand: Leg, arm: Spring, elbow: Spring) -> void:
 		var k := reach - soft
 		target = base + to_target / d * (soft + k * (1.0 - exp(-(d - soft) / k)))
 	target.y = minf(target.y, _floor_rig(target.x))
-	var angles := _ik_above_floor(base, target, UPPER_ARM_LENGTH, FOREARM_LENGTH, -1.0)
+	var angles := _ik_above_floor(base, target, UPPER_ARM_LENGTH, FOREARM_LENGTH, -1.0, hand)
 	var arm_global := angles.x - PI / 2.0
 	hand.thigh.rotation = wrapf(arm_global - _rib_global(), -PI, PI)
 	hand.shin.rotation = wrapf(angles.y - angles.x, -PI, PI)
@@ -2108,10 +2159,13 @@ func _aim_wire_arm() -> void:
 	player.set_wire_origin(view_world(&"ForearmNear", _hand_world(_near_hand)))
 
 
-## Throws the near arm straight out ahead for a plasma shot, kicking up as the bolt leaves.
+## Throws the near arm out for a plasma shot, at the shot's aim (straight ahead, up, or onto the
+## enemy it locked on to), kicking up as the bolt leaves.
 func _aim_shot_arm() -> void:
 	var w := player.shot_raise()
-	var arm := lerp_angle(_near_arm.value, -PI / 2.0 - 0.18 * player.shot_recoil(), w)
+	# Rig space: x ahead, y down; the arm hangs at 0 and points ahead at -PI/2.
+	var aim := -PI / 2.0 - player.shot_elevation()
+	var arm := lerp_angle(_near_arm.value, aim - 0.18 * player.shot_recoil(), w)
 	var elbow := lerpf(_near_elbow.value, 0.0, w)
 	bones[&"UpperArmNear"].rotation = wrapf(arm - _rib_global(), -PI, PI)
 	bones[&"ForearmNear"].rotation = elbow
@@ -2198,7 +2252,7 @@ func _solve_leg(leg: Leg, hip: Bone2D) -> void:
 	# A peg resting on the floor sits on it; a leg lying along it keeps its thickness above it.
 	var flat := absf((target - base).normalized().x)
 	target.y = minf(target.y, _floor_rig(target.x) - 1.5 * flat * flat)
-	var angles := _ik_above_floor(base, target, l1, SHIN_LENGTH, 1.0)
+	var angles := _ik_above_floor(base, target, l1, SHIN_LENGTH, 1.0, leg)
 	# Bones point down (+y) at rotation 0, so subtract a quarter turn from the limb angles.
 	leg.thigh.rotation = wrapf(angles.x - PI / 2.0 - hip.rotation, -PI, PI)
 	leg.shin.rotation = wrapf(angles.y - angles.x, -PI, PI)

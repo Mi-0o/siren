@@ -20,7 +20,12 @@ extends CharacterBody2D
 ## flip, and the robot holds still for turn_pause before setting off the other way. Stopping or
 ## reversing from a run brakes more gently (run_stop_time), so the robot skids a little.
 ##
-## C fires a wire (straight up when still, diagonally forward when moving) or releases it.
+## C fires a wire (straight up when still, diagonally forward when moving; holding up or down
+## while moving fires it steeper or flatter) or releases it. The hook bites walls and enemies,
+## preferring an enemy near the aim. Everything has a weight in kg (the robot's is weight):
+## an enemy lighter than wire_drag_weight is reeled in to the robot (lighter comes faster, and
+## dragging one on a taut wire slows the robot by its share of the weight); a heavier one is an
+## anchor the robot hangs from and reels itself in to, budging it a little.
 ## While attached, Z reels in and X pays out instead of jumping and dashing.
 ##
 ## Everything runs on charge, which only charging stations restore (see recharge()). Walking and
@@ -53,8 +58,10 @@ extends CharacterBody2D
 ##
 ## Three attacks. S is melee: a six-strike combo (jab, cross, knee, front kick, low sweep,
 ## roundhouse), each strike costing melee_cost; pressing S during a strike chains the next, and
-## the combo starts over after melee_chain_time without one. D fires a plasma bolt straight
-## ahead from the raised arm (shot_cost, shot_cooldown between shots). F is the charged burst:
+## the combo starts over after melee_chain_time without one. D fires a plasma bolt from the
+## raised arm (shot_cost, shot_cooldown between shots): straight ahead, or 45º up with up held,
+## and turned onto the nearest enemy within shot_assist_angle of that. A bolt that hits an enemy
+## bursts on it (take_hit). F is the charged burst:
 ## the robot braces, the arm's heat line glows red to white over burst_heat_time, then a
 ## massive explosion fills a cone (burst_angle wide) out to the screen's edge, shaking and
 ## glaring the screen, scorching what it hits and flinging the robot back into a slide. It
@@ -105,6 +112,8 @@ const ROPE_ITERATIONS: int = 14
 ## this share of their length (1 would be a rigid rod).
 const ROPE_STIFFNESS: float = 0.95
 const STEEL := Color(0.6, 0.62, 0.64)
+## Physics layer 1: the level (and the robot itself). Probes of the level use only this.
+const SOLID_MASK: int = 1
 
 ## Where the wire's hook is: in the launcher, flying out, anchored, or reeling back in.
 enum Hook { STOWED, FLYING, ATTACHED, RETURNING }
@@ -294,13 +303,32 @@ enum Hook { STOWED, FLYING, ATTACHED, RETURNING }
 @export var dash_distance: float = 4.0
 ## Duration of the braking at the end of the dash, in seconds. The rest is at full dash_speed.
 @export var dash_stop_time: float = 0.15
+## Seconds from the start of a dash that the robot phases: it passes through enemies and their
+## attacks can't touch it. If it ends inside an enemy, it keeps passing through (still hittable)
+## until it's clear.
+@export var dash_phase_time: float = 0.25
 
 @export_group("Wire")
+## The robot's weight, in kg. Enemies have one too (Enemy.weight); the wire compares them.
+@export var weight: float = 150.0
+## How hard the robot's core is to damage, against an attack's damage (see CoreDamage). A hit
+## may push the core one stage on (mild, heavy, fault = death), or several if it's strong.
+@export var resistance: float = 48.0
 ## Maximum reach of the wire, in metres (10 m = 160 px).
 @export var wire_range: float = 10.0
 ## Elevation of a shot fired while moving, in degrees above horizontal in the direction of
-## travel. Standing still always fires straight up.
+## travel; holding up while moving fires at wire_up_angle, holding down at wire_down_angle.
+## Standing still always fires straight up.
 @export var wire_moving_angle: float = 45.0
+@export var wire_up_angle: float = 80.0
+@export var wire_down_angle: float = 15.0
+## How far off the aim an enemy may be and still be hooked, in degrees. Enemies in this cone
+## are tried before any wall.
+@export var wire_entity_angle: float = 20.0
+## An enemy lighter than this (kg) is reeled in to the robot; a heavier one pulls the robot to it.
+@export var wire_drag_weight: float = 200.0
+## Closest a reeled-in enemy is held, in pixels from the launcher shoulder.
+@export var wire_hold_length: float = 10.0
 ## How far off the aimed direction a surface may be and still be grabbed, in degrees.
 ## Smaller offsets always win; distance only breaks ties at the same offset.
 @export var wire_search_angle: float = 12.0
@@ -357,6 +385,23 @@ enum Hook { STOWED, FLYING, ATTACHED, RETURNING }
 ## D: seconds to raise the arm before the bolt leaves, and to hold it out after.
 @export var shot_raise_time: float = 0.06
 @export var shot_hold_time: float = 0.3
+## D aims straight ahead, or this many degrees up with up held; the nearest enemy within
+## shot_assist_angle of that (above or below), in sight and within shot_assist_range metres, is
+## aimed at instead.
+@export var shot_up_angle: float = 45.0
+## Damage numbers of the robot's attacks, against a target's resistance (see CoreDamage): the
+## plasma shot, the burst, and the melee strikes in combo order (jab, cross, knee, front kick,
+## low sweep, roundhouse).
+@export var shot_damage: float = 15.0
+@export var burst_damage: float = 1000000.0
+@export var melee_damage: Array[float] = [15.0, 16.0, 16.0, 17.0, 16.0, 18.0]
+@export var shot_assist_angle: float = 30.0
+@export var shot_assist_range: float = 20.0
+## Enemy hits: how much of an attacker's speed (scaled by its share of the two weights) shoves
+## the robot, the least shove in m/s, and seconds the shove carries it before control returns.
+@export var hit_push_factor: float = 1.6
+@export var hit_push_min: float = 2.0
+@export var hit_push_time: float = 0.3
 ## F: charge per burst; seconds to brace, to heat the arm, and to recover after firing.
 @export var burst_cost: float = 500.0
 @export var burst_brace_time: float = 0.25
@@ -471,6 +516,14 @@ var _hook_pos: Vector2
 var _hook_target: Vector2
 ## True if the flying hook will bite when it gets there (false: a miss).
 var _hook_bites: bool = false
+## The enemy the hook is flying at or stuck in (null for walls), and where on it, relative to its
+## origin.
+var _hook_entity: Enemy = null
+## Which way the hook points: the way it was fired, kept once it bites.
+var _hook_dir: Vector2 = Vector2.RIGHT
+## Draws the cable and the hook (the Wire Line2D stays hidden).
+var _wire_visual := WireVisual.new()
+var _hook_offset: Vector2 = Vector2.ZERO
 ## Where the drawn wire leaves the launcher hand, in global coordinates.
 var _wire_origin: Vector2
 ## Simulated rope points (global) and their previous positions, launcher end first.
@@ -552,6 +605,20 @@ var _shot_fired: bool = false
 var _shot_fire_at: float = 0.0
 var _shot_dud: bool = false
 var _shot_cooldown_left: float = 0.0
+## This shot's aim, in radians above straight ahead (negative is down), and the enemy it's
+## locked on to (null when none).
+var _shot_elevation: float = 0.0
+var _shot_target: Enemy = null
+## Seconds left of a shove from an enemy's hit, carrying the robot with input muted.
+var _shove_left: float = 0.0
+## Dash phasing: seconds of invulnerability left, whether the body still passes through
+## enemies, and the enemies it's excepted from meanwhile.
+var _phase_left: float = 0.0
+var _phasing: bool = false
+var _phase_with: Array[Enemy] = []
+## The core's damage stage and the hits counting towards the next (kept in step with
+## core_damage).
+var _core := CoreDamage.new()
 ## Burst: seconds since F (-1: not bracing), and whether it has fired.
 var _burst_t: float = -1.0
 var _burst_fired: bool = false
@@ -612,8 +679,18 @@ func _ready() -> void:
 	_air_control_speed_px = air_control_speed * pixels_per_meter
 	# Up and back down to the same height: t = 2 * v / g.
 	_air_lock_duration = 2.0 * _charged_jump_velocity_px / _gravity_px + air_lock_extra_time
+	var light := CoreLight.new()
+	light.height = 30.0
+	add_child(light)
+	get_tree().node_added.connect(_watch_enemy)
+	for node in get_tree().get_nodes_in_group(Enemy.GROUP):
+		_watch_enemy(node)
+	_wire_visual.z_index = _wire_line.z_index
+	add_child(_wire_visual)
+	# Enemies block the robot (and it shoves them), but every probe of the level ignores them.
+	collision_mask = SOLID_MASK | Enemy.ENEMY_LAYER
 	_wire_query = PhysicsRayQueryParameters2D.new()
-	_wire_query.collision_mask = collision_mask
+	_wire_query.collision_mask = SOLID_MASK
 	_wire_query.exclude = [get_rid()]
 	# Own copy of the shape, since postures resize it.
 	_collision.shape = _collision.shape.duplicate()
@@ -623,7 +700,7 @@ func _ready() -> void:
 		Posture.CROUCH: crouch_hitbox_size, Posture.PRONE: prone_hitbox_size,
 	}
 	_hitbox_bottom = _collision.position.y + stand_size.y / 2.0
-	_posture_query.collision_mask = collision_mask
+	_posture_query.collision_mask = SOLID_MASK
 	_posture_query.exclude = [get_rid()]
 	_melee_hitbox = AttackHitbox.new()
 	_melee_hitbox.name = "MeleeHitbox"
@@ -649,6 +726,8 @@ func _physics_process(delta: float) -> void:
 	var fall_speed := velocity.y
 	_recovery_left = maxf(_recovery_left - delta, 0.0)
 	_fling_left = maxf(_fling_left - delta, 0.0)
+	_shove_left = maxf(_shove_left - delta, 0.0)
+	_update_phase(delta)
 	_update_damage(delta)
 	var locked := is_recovering() or is_stumbling() or is_down() or is_dead()
 	var attacking := is_meleeing() or is_bracing()
@@ -672,10 +751,11 @@ func _physics_process(delta: float) -> void:
 	if _action_just_pressed("wire") and not locked:
 		_on_wire_pressed()
 
+	_follow_hooked_entity()
 	if _wire_attached:
 		if _winch_input() < 0.0:
-			_drain(reel_drain * delta)
-		elif not is_on_floor() and is_wire_taut():
+			_drain(reel_drain * _reel_drain_factor() * delta)
+		elif not is_on_floor() and is_wire_taut() and is_wire_anchored():
 			_drain(hang_drain * delta)
 		if charge <= 0.0:
 			_detach_wire()
@@ -691,6 +771,7 @@ func _physics_process(delta: float) -> void:
 		and _can_dash()
 	):
 		_drain(dash_cost)
+		_start_phase()
 		_dash_dir = signf(velocity.x)
 		_dash_remaining_px = _dash_distance_px * _leg_strength()
 		_jump_charging = false
@@ -833,6 +914,31 @@ func is_wire_attached() -> bool:
 	return _wire_attached
 
 
+## True while the wire holds the robot: attached to a wall or to an enemy heavy enough to hang
+## from. Hooking a light enemy doesn't.
+func is_wire_anchored() -> bool:
+	return _wire_attached and not _hooked_light()
+
+
+## The enemy on the end of the wire (attached or the hook flying at it), or null.
+func wire_entity() -> Enemy:
+	return _hook_entity if is_instance_valid(_hook_entity) else null
+
+
+## Weight in kg of any body: its weight property, or 100 when it has none.
+static func weight_of(body: Object) -> float:
+	var w: Variant = body.get(&"weight") if body != null else null
+	return float(w) if w != null else 100.0
+
+
+## True when the wire is stuck in an enemy light enough to be reeled in.
+func _hooked_light() -> bool:
+	return (
+		_wire_attached and is_instance_valid(_hook_entity)
+		and weight_of(_hook_entity) < wire_drag_weight
+	)
+
+
 ## True while the wire line is drawn (attached, or briefly after a miss).
 func is_wire_shown() -> bool:
 	return _hook != Hook.STOWED
@@ -940,16 +1046,20 @@ func _move() -> void:
 		velocity.x = keep_x
 		global_position.x += step_x
 		return
-	if _wire_attached:
+	if is_wire_anchored():
 		_constrain_velocity_to_wire()
+	var intended := velocity * get_physics_process_delta_time()
 	move_and_slide()
-	if _wire_attached:
+	_shove_enemies(intended)
+	if _hooked_light():
+		_drag_hooked_entity()
+	elif _wire_attached:
 		_settle_wire_length()
 
 
 func _update_ground(direction: float, delta: float) -> void:
-	if is_recovering() or is_stumbling() or is_down() or is_dead():
-		# Crouched after a hard landing, staggering or on the floor: slide to a stop.
+	if is_recovering() or is_stumbling() or is_down() or is_dead() or _shove_left > 0.0:
+		# Crouched after a hard landing, staggering, shoved or on the floor: slide to a stop.
 		_jump_charging = false
 		_jump_ready = false
 		# Thrown down by the burst's kick: a long slide rather than the usual quick stop.
@@ -1039,7 +1149,7 @@ func _update_air(direction: float, delta: float) -> void:
 	_jump_ready = false
 	velocity.y += _gravity_px * delta
 
-	if _wire_attached:
+	if is_wire_anchored():
 		# Swinging: momentum is free so the rope can turn it into a pendulum.
 		if direction != 0.0:
 			_push_swing(direction, delta)
@@ -1145,9 +1255,12 @@ func _on_wire_pressed() -> void:
 		if randf() < (systems_heavy_short_chance if heavy else systems_mild_short_chance):
 			var most := systems_heavy_short_reach if heavy else systems_mild_short_reach
 			reach *= randf_range(most * 0.5, most)
-	# The hook flies straight at what the search found, or out to full reach on a miss.
-	_hook_bites = _find_grapple_point(aim, reach)
+	# The hook flies straight at what the search found, or out to full reach on a miss. An enemy
+	# near the aim wins over any wall.
+	_hook_entity = _find_wire_entity(aim, reach)
+	_hook_bites = _hook_entity != null or _find_grapple_point(aim, reach)
 	_hook_target = _wire_anchor if _hook_bites else global_position + aim * reach
+	_hook_dir = (_hook_target - global_position).normalized()
 	_hook = Hook.FLYING
 	if _wire_origin == Vector2.ZERO:
 		_wire_origin = global_position
@@ -1158,6 +1271,9 @@ func _on_wire_pressed() -> void:
 ## Letting go mid-air keeps the swing's momentum with no air lock, so drag and air control apply.
 func _detach_wire() -> void:
 	_wire_attached = false
+	if is_instance_valid(_hook_entity):
+		_hook_entity.wire_held = false
+	_hook_entity = null
 	if _hook == Hook.FLYING or _hook == Hook.ATTACHED:
 		_hook = Hook.RETURNING
 
@@ -1168,7 +1284,14 @@ func _on_hook_arrived() -> void:
 	if not _hook_bites:
 		_hook = Hook.RETURNING
 		return
+	if _hook_entity != null and not is_instance_valid(_hook_entity):
+		# The enemy was gone by the time the hook got there.
+		_hook_entity = null
+		_hook = Hook.RETURNING
+		return
 	_hook = Hook.ATTACHED
+	if _hook_entity != null:
+		_hook_entity.wire_held = true
 	_wire_attached = true
 	var distance := wire_mount().distance_to(_wire_anchor)
 	# A shallow curve of sag d over a span L takes about 8d²/3L of extra wire.
@@ -1186,8 +1309,117 @@ func _wire_aim() -> Vector2:
 	var side := _input_dir if _input_dir != 0.0 else signf(velocity.x)
 	if is_zero_approx(side):
 		return Vector2.UP
-	var angle := deg_to_rad(wire_moving_angle)
+	var degrees := wire_moving_angle
+	if _action_pressed("look_up") and not _action_pressed("look_down"):
+		degrees = wire_up_angle
+	elif _action_pressed("look_down") and not _action_pressed("look_up"):
+		degrees = wire_down_angle
+	var angle := deg_to_rad(degrees)
 	return Vector2(side * cos(angle), -sin(angle))
+
+
+## The enemy to hook: the one closest to the aim within wire_entity_angle and reach, that the
+## wire can see (no wall in between). Sets _wire_anchor and _hook_offset to the spot it hits.
+func _find_wire_entity(aim: Vector2, reach: float) -> Enemy:
+	var origin := global_position
+	var cone := deg_to_rad(wire_entity_angle)
+	var candidates: Array = []
+	for node in get_tree().get_nodes_in_group(Enemy.GROUP):
+		var enemy := node as Enemy
+		if enemy == null or enemy.dead or not is_instance_valid(enemy.collision):
+			continue
+		var to := enemy.collision.global_position - origin
+		var off := absf(aim.angle_to(to))
+		if off <= cone and to.length() <= reach + 6.0:
+			candidates.append([off, enemy])
+	candidates.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	var query := PhysicsRayQueryParameters2D.create(
+		origin, origin, SOLID_MASK | Enemy.ENEMY_LAYER, [get_rid()]
+	)
+	for c: Array in candidates:
+		var enemy: Enemy = c[1]
+		var to := enemy.collision.global_position - origin
+		query.to = origin + to + to.normalized() * 4.0
+		var hit := get_world_2d().direct_space_state.intersect_ray(query)
+		if hit.is_empty() or hit.collider != enemy:
+			continue
+		if origin.distance_to(hit.position) > reach:
+			continue
+		_wire_anchor = hit.position
+		_hook_offset = hit.position - enemy.global_position
+		return enemy
+	return null
+
+
+## Keeps the hook on the enemy it's flying at or stuck in, and lets go when the enemy is gone.
+func _follow_hooked_entity() -> void:
+	if _hook_entity == null:
+		return
+	if not is_instance_valid(_hook_entity) or _hook_entity.dead:
+		if _wire_attached:
+			_detach_wire()
+		elif _hook == Hook.FLYING:
+			_hook_entity = null
+			_hook_bites = false
+			_hook = Hook.RETURNING
+		else:
+			_hook_entity = null
+		return
+	_wire_anchor = _hook_entity.global_position + _hook_offset
+	if _hook == Hook.FLYING:
+		_hook_target = _wire_anchor
+
+
+## Reeling in a light enemy: lighter ones come in faster.
+func _entity_reel_speed_px() -> float:
+	var w := maxf(weight_of(_hook_entity), 1.0)
+	return _reel_speed_px * clampf(sqrt(weight / w), 0.5, 3.0)
+
+
+## Reeling drains more the heavier the light enemy being hauled; hanging or reeling oneself in
+## costs the usual.
+func _reel_drain_factor() -> float:
+	if not _hooked_light():
+		return 1.0
+	return clampf(weight_of(_hook_entity) / weight, 0.25, 1.5)
+
+
+## After moving, with a light enemy on the wire: reeling (Z) shortens the rope and drags the
+## enemy in; paying out (X) lets it get further. When the rope is taut the enemy is pulled after
+## the robot, and the robot is held back by the enemy's share of their weight. An enemy snagged
+## on the level holds the robot like a wall would.
+func _drag_hooked_entity() -> void:
+	var enemy := _hook_entity
+	var delta := get_physics_process_delta_time()
+	var winch := _winch_input()
+	if winch < 0.0:
+		_wire_length = maxf(_wire_length - _entity_reel_speed_px() * delta, wire_hold_length)
+	elif winch > 0.0:
+		_wire_length = minf(_wire_length + _extend_speed_px * delta, _wire_range_px)
+	var from := wire_mount()
+	var anchor := enemy.global_position + _hook_offset
+	var offset := anchor - from
+	var distance := offset.length()
+	if distance > _wire_length and distance > 0.001:
+		var n := offset / distance
+		var excess := distance - _wire_length
+		# Reeling, the robot holds its ground and the enemy comes; otherwise the pull is shared.
+		var share := 0.0 if winch < 0.0 else weight_of(enemy) / (weight_of(enemy) + weight)
+		var out := enemy.velocity.dot(n)
+		if out > 0.0:
+			enemy.velocity -= n * out
+		enemy.move_and_collide(-n * excess * (1.0 - share))
+		anchor = enemy.global_position + _hook_offset
+		var left := from.distance_to(anchor) - _wire_length
+		if left > 0.01:
+			# The robot's share, plus whatever the enemy couldn't give (snagged).
+			move_and_collide(n * left)
+			if left > excess * share + 0.5:
+				# Snagged: it holds the robot like a wall would.
+				var away := velocity.dot(-n)
+				if away > 0.0:
+					velocity += n * away
+	_wire_anchor = enemy.global_position + _hook_offset
 
 
 ## Casts rays fanning out from the aim in WIRE_SEARCH_STEP_DEG steps. The first offset that hits
@@ -1262,6 +1494,11 @@ func _settle_wire_length() -> void:
 		_wire_length = minf(_wire_length + _extend_speed_px * delta, _wire_range_px)
 	if distance > _wire_length:
 		move_and_collide(-offset / distance * (distance - _wire_length))
+	if winch < 0.0 and is_instance_valid(_hook_entity) and distance >= _wire_length - 0.5:
+		# Reeling in to a heavy enemy budges it towards the robot, less the heavier it is.
+		var budge := 0.5 * weight / maxf(weight_of(_hook_entity), 1.0)
+		_hook_entity.move_and_collide(-offset.normalized() * _reel_speed_px * budge * delta)
+		_wire_anchor = _hook_entity.global_position + _hook_offset
 
 
 func _update_wire_line(delta: float) -> void:
@@ -1280,18 +1517,22 @@ func _update_wire_line(delta: float) -> void:
 			)
 			if _hook_pos.distance_to(_wire_origin) < 1.0:
 				_hook = Hook.STOWED
+	_wire_line.visible = false
 	if _hook == Hook.STOWED:
-		_wire_line.visible = false
 		_rope.clear()
+		_wire_visual.shown = false
+		_wire_visual.refresh()
 		return
 	_simulate_rope(delta)
-	_wire_line.visible = true
-	_wire_line.default_color = STEEL
-	var local := PackedVector2Array()
-	local.resize(_rope.size())
-	for i in _rope.size():
-		local[i] = to_local(_rope[i]).round()
-	_wire_line.points = local
+	if _hook == Hook.RETURNING and _rope.size() >= 2:
+		# Winding back in, the hook trails behind the cable.
+		var back := _rope[_rope.size() - 1] - _rope[_rope.size() - 2]
+		if back.length() > 0.01:
+			_hook_dir = _hook_dir.slerp(back.normalized(), 0.3)
+	_wire_visual.rope = _rope
+	_wire_visual.hook_dir = _hook_dir
+	_wire_visual.shown = true
+	_wire_visual.refresh()
 
 
 ## Lays the rope out straight from the launcher to the hook.
@@ -1315,7 +1556,7 @@ func _simulate_rope(delta: float) -> void:
 	if count != _rope.size():
 		_resample_rope(count)
 	var segment := length / float(count - 1)
-	_rope_point_query.collision_mask = collision_mask
+	_rope_point_query.collision_mask = SOLID_MASK
 	_rope_point_query.exclude = [get_rid()]
 	var space := get_world_2d().direct_space_state
 	var gravity := Vector2(0.0, ROPE_GRAVITY * delta * delta)
@@ -1733,6 +1974,7 @@ func _start_melee(index: int) -> void:
 	_melee_t = 0.0
 	_melee_queued = false
 	_stop_jump_and_skid()
+	_melee_hitbox.damage = melee_damage[index] if index < melee_damage.size() else 10.0
 	var box: Rect2 = MELEE_MOVES[index].box
 	(_melee_shape.shape as RectangleShape2D).size = box.size
 	_melee_hitbox.position = Vector2(_facing * box.get_center().x, box.get_center().y)
@@ -1766,6 +2008,7 @@ func _end_melee() -> void:
 ## Raises the arm for a shot. Damaged systems can hold the bolt in the arm a moment (mild and
 ## heavy), or let it fizzle out (heavy, sometimes; fault, always).
 func _start_shot() -> void:
+	_aim_shot()
 	_shot_t = 0.0
 	_shot_fired = false
 	_shot_fire_at = shot_raise_time
@@ -1801,8 +2044,11 @@ func _update_shot(delta: float) -> void:
 					spread = systems_mild_shot_spread
 				Damage.HEAVY:
 					spread = systems_heavy_shot_spread
+			# Re-aimed from the muzzle as it leaves, in case the target moved.
+			_aim_shot(muzzle())
 			var bolt := PlasmaShot.new()
-			bolt.direction = Vector2(_facing, 0.0).rotated(deg_to_rad(randf_range(-spread, spread)))
+			bolt.damage = shot_damage
+			bolt.direction = shot_direction().rotated(deg_to_rad(randf_range(-spread, spread)))
 			bolt.speed = shot_speed * PIXELS_PER_METER
 			bolt.shooter = self
 			bolt.position = get_parent().to_local(muzzle()) if get_parent() is Node2D else muzzle()
@@ -1810,6 +2056,174 @@ func _update_shot(delta: float) -> void:
 	if _shot_t >= _shot_fire_at + shot_hold_time:
 		_shot_t = -1.0
 		_shot_fired = false
+
+
+## Walking or running into an enemy shoves it along, slowed by its share of the two weights:
+## a rabbit barely slows the robot, a watcher noticeably. Whatever it can't push holds the robot
+## like a wall.
+func _shove_enemies(intended: Vector2) -> void:
+	if absf(intended.x) < 0.001:
+		return
+	for i in get_slide_collision_count():
+		var hit := get_slide_collision(i)
+		var enemy := hit.get_collider() as Enemy
+		if enemy == null or absf(hit.get_normal().x) < 0.5 or signf(-hit.get_normal().x) != signf(intended.x):
+			continue
+		var share := weight / (weight + weight_of(enemy))
+		var push := Vector2(intended.x * share, 0.0)
+		var blocked := enemy.move_and_collide(push)
+		var moved := push.x if blocked == null else push.x - blocked.get_remainder().x
+		if absf(moved) > 0.01:
+			move_and_collide(Vector2(moved, 0.0))
+		return
+
+
+## An enemy's attack connected: shoved away from it by its momentum (its speed scaled by its
+## share of the two weights), and stumbling if it came from behind.
+func _on_enemy_attack_landed(attack: StringName, victim: Node2D, enemy: Enemy) -> void:
+	if victim != self or not is_instance_valid(enemy) or is_dead() or fly_mode or is_invulnerable():
+		return
+	var away := signf(global_position.x - enemy.global_position.x)
+	if away == 0.0:
+		away = enemy.facing
+	var w := weight_of(enemy)
+	var speed := absf(enemy.velocity.x) / PIXELS_PER_METER + hit_push_min
+	var push := speed * w / (w + weight) * hit_push_factor
+	velocity.x = away * push * PIXELS_PER_METER
+	_air_velocity_x = velocity.x
+	_air_target_x = velocity.x
+	if attack == &"lunge" and is_on_floor():
+		velocity.y = -push * 0.35 * PIXELS_PER_METER
+	_shove_left = hit_push_time
+	if signf(enemy.global_position.x - global_position.x) == -_facing:
+		# From behind: it trips forward.
+		stumble()
+
+
+## Dash phasing starts: nothing hits the robot and it passes through every enemy.
+func _start_phase() -> void:
+	_phase_left = dash_phase_time
+	if _phasing:
+		return
+	_phasing = true
+	collision_mask = SOLID_MASK
+	_phase_with.clear()
+	for node in get_tree().get_nodes_in_group(Enemy.GROUP):
+		var enemy := node as Enemy
+		if enemy != null:
+			enemy.add_collision_exception_with(self)
+			add_collision_exception_with(enemy)
+			_phase_with.append(enemy)
+
+
+func _update_phase(delta: float) -> void:
+	if not _phasing:
+		return
+	_phase_left = maxf(_phase_left - delta, 0.0)
+	if _phase_left > 0.0 or _inside_enemy():
+		return
+	_phasing = false
+	collision_mask = SOLID_MASK | Enemy.ENEMY_LAYER
+	for enemy in _phase_with:
+		if is_instance_valid(enemy):
+			enemy.remove_collision_exception_with(self)
+			remove_collision_exception_with(enemy)
+	_phase_with.clear()
+
+
+## True while the body overlaps any enemy.
+func _inside_enemy() -> bool:
+	var size := (_collision.shape as RectangleShape2D).size
+	var shape := RectangleShape2D.new()
+	shape.size = size
+	var query := PhysicsShapeQueryParameters2D.new()
+	query.shape = shape
+	query.transform = Transform2D(0.0, _collision.global_position)
+	query.collision_mask = Enemy.ENEMY_LAYER
+	return not get_world_2d().direct_space_state.intersect_shape(query, 1).is_empty()
+
+
+## True during a dash's invulnerability window: attacks pass through the robot.
+func is_invulnerable() -> bool:
+	return _phase_left > 0.0
+
+
+## True while the robot passes through enemies (the dash window, or still inside one after it).
+func is_phasing() -> bool:
+	return _phasing
+
+
+## An attack landed on the robot (AttackHitbox calls this): it may push the core on a stage or
+## more, against resistance (CoreDamage). A core fault is death.
+func take_hit(damage: float, from: Node = null) -> void:
+	if from == self or is_dead() or fly_mode or is_invulnerable():
+		return
+	_core.set_stage(int(_damage[Part.CORE]))
+	var stages := _core.hit(damage, resistance)
+	if stages > 0:
+		set_damage(Part.CORE, mini(_core.stage, Damage.FAULT) as Damage)
+
+
+## Core stage for the dev core light: 0 healthy to 3 fault.
+func core_stage() -> int:
+	return int(_damage[Part.CORE])
+
+
+## Hooks up every enemy that reports its attacks landing, now and as they're spawned.
+func _watch_enemy(node: Node) -> void:
+	if node is Enemy and node.has_signal(&"attack_landed"):
+		var callable := _on_enemy_attack_landed.bind(node)
+		if not node.is_connected(&"attack_landed", callable):
+			node.connect(&"attack_landed", callable)
+
+
+## Aims the handgun: straight ahead, or shot_up_angle up with up held, unless the nearest
+## enemy within shot_assist_angle of that (in sight, within range, ahead) can be aimed at.
+## Measured from origin (the muzzle once it's out; the chest before).
+func _aim_shot(origin: Vector2 = Vector2.INF) -> void:
+	if origin == Vector2.INF:
+		origin = global_position + Vector2(_facing * 6.0, -10.0)
+	var base := deg_to_rad(shot_up_angle) if _action_pressed("look_up") else 0.0
+	var forward := Vector2(_facing * cos(base), -sin(base))
+	var cone := deg_to_rad(shot_assist_angle)
+	var reach := shot_assist_range * PIXELS_PER_METER
+	var query := PhysicsRayQueryParameters2D.create(origin, origin, SOLID_MASK, [get_rid()])
+	var space := get_world_2d().direct_space_state
+	var best: Enemy = null
+	var best_distance := INF
+	var best_to := Vector2.ZERO
+	for node in get_tree().get_nodes_in_group(Enemy.GROUP):
+		var enemy := node as Enemy
+		if enemy == null or enemy.dead or not is_instance_valid(enemy.collision):
+			continue
+		var to := enemy.collision.global_position - origin
+		var distance := to.length()
+		if distance > reach or distance < 1.0 or to.x * _facing <= 0.0:
+			continue
+		if absf(forward.angle_to(to)) > cone or distance >= best_distance:
+			continue
+		# Only if no wall is in the way.
+		query.to = enemy.collision.global_position
+		if not space.intersect_ray(query).is_empty():
+			continue
+		best = enemy
+		best_distance = distance
+		best_to = to
+	_shot_target = best
+	if best != null:
+		_shot_elevation = atan2(-best_to.y, absf(best_to.x))
+	else:
+		_shot_elevation = base
+
+
+## Which way this shot's bolt flies (unit vector).
+func shot_direction() -> Vector2:
+	return Vector2(_facing * cos(_shot_elevation), -sin(_shot_elevation))
+
+
+## This shot's aim in radians above straight ahead (negative is down), for the arm.
+func shot_elevation() -> float:
+	return _shot_elevation
 
 
 ## A sputter of sparks and smoke from the muzzle: a weapon failing to fire.
@@ -1846,6 +2260,7 @@ func _update_burst() -> void:
 		blast.hit_angle = burst_hit_angle
 		blast.reach = maxf(edge, 32.0)
 		blast.attacker = self
+		blast.damage = burst_damage
 		# Placed before it enters the tree: it scorches and spawns from where it is in _ready.
 		blast.position = get_parent().to_local(at) if get_parent() is Node2D else at
 		get_parent().add_child(blast)
@@ -2015,7 +2430,7 @@ func _find_ledge(max_height: float) -> Dictionary:
 	var size := (_collision.shape as RectangleShape2D).size
 	var feet := global_position.y + _hitbox_bottom
 	var space := get_world_2d().direct_space_state
-	var query := PhysicsRayQueryParameters2D.create(Vector2.ZERO, Vector2.ZERO, collision_mask, [get_rid()])
+	var query := PhysicsRayQueryParameters2D.create(Vector2.ZERO, Vector2.ZERO, SOLID_MASK, [get_rid()])
 	# The wall's face, just above the feet.
 	query.from = Vector2(global_position.x, feet - 2.0)
 	query.to = query.from + Vector2(_facing * (size.x * 0.5 + 4.0), 0.0)

@@ -10,6 +10,9 @@
 [ext_resource type="Script" uid="uid://b676bucpwyktl" path="res://tests/playground/warehouse_backdrop.gd" id="10_backdrop"]
 [ext_resource type="Script" uid="uid://bp4ca1yg5t1gl" path="res://tests/playground/arena_floor.gd" id="11_floor"]
 [ext_resource type="Script" uid="uid://bmfj82nb3pun3" path="res://tests/playground/arena_block.gd" id="12_block"]
+[ext_resource type="Script" uid="uid://4i3imkj15er" path="res://tests/playground/hanging_platform.gd" id="13_platform"]
+[ext_resource type="Script" uid="uid://bmjd0boh8rf5l" path="res://tests/playground/floor_hole.gd" id="14_hole"]
+[ext_resource type="Script" uid="uid://df6b4soc8vagn" path="res://props/floor_vent.gd" id="15_vent"]
 
 [node name="MovementPlayground" type="Node2D" unique_id=488757482]
 
@@ -17,8 +20,14 @@
 script = ExtResource("10_backdrop")
 
 [node name="Floor" type="StaticBody2D" parent="." unique_id=1500311928]
-position = Vector2(240, 202)
+position = Vector2(101, 202)
 script = ExtResource("11_floor")
+width = 1722
+
+[node name="FloorRight" type="StaticBody2D" parent="." unique_id=1500311940]
+position = Vector2(1151, 202)
+script = ExtResource("11_floor")
+width = 178
 
 [node name="Step8" type="StaticBody2D" parent="." unique_id=1500311930]
 position = Vector2(360, 202)
@@ -41,6 +50,29 @@ position = Vector2(672, 202)
 script = ExtResource("12_block")
 size = Vector2i(80, 48)
 variant = 3
+
+[node name="Hole" type="Node2D" parent="." unique_id=1500311941]
+position = Vector2(1012, 202)
+script = ExtResource("14_hole")
+
+[node name="VentSpawn" type="Node2D" parent="." unique_id=543374613]
+z_index = 1
+position = Vector2(272, 202)
+script = ExtResource("15_vent")
+
+[node name="VentPastSteps" type="Node2D" parent="." unique_id=16984179]
+z_index = 1
+position = Vector2(840, 202)
+script = ExtResource("15_vent")
+
+[node name="VentLeft" type="Node2D" parent="." unique_id=67830743]
+z_index = 1
+position = Vector2(50, 202)
+script = ExtResource("15_vent")
+
+[node name="HighPlatform" type="StaticBody2D" parent="." unique_id=1500311942]
+position = Vector2(516, 40)
+script = ExtResource("13_platform")
 
 [node name="SaveStation" parent="." unique_id=640318297 node_paths=PackedStringArray("menu") instance=ExtResource("7_save_station")]
 position = Vector2(130, 202)
